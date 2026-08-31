@@ -1,0 +1,55 @@
+register_map:
+  metadata:
+    generator: register-map-app
+    version: "1.0"
+  registers:
+    - address: 0x00000000
+      mnemonic: CTRL
+      width: 32
+      access: rw
+      description: Top-level control register
+      reset_value: 0
+      bits:
+        - position: 0
+          width: 1
+          name: ENABLE
+          access: rw
+          description: Module enable
+          reset_value: 0
+        - position: 1
+          width: 2
+          name: MODE
+          access: rw
+          description: Operating mode selector
+          reset_value: 0
+        - position: 3
+          width: 1
+          name: SWRST
+          access: w
+          description: Software reset, self-clearing
+          reset_value: 0
+    - address: 0x00000004
+      mnemonic: STATUS
+      width: 32
+      access: r
+      description: Current status flags
+      reset_value: 0
+      bits:
+        - position: 0
+          width: 1
+          name: READY
+          access: r
+          description: Peripheral is ready
+          reset_value: 0
+        - position: 1
+          width: 1
+          name: ERROR
+          access: r
+          description: Last operation error flag
+          reset_value: 0
+    - address: 0x00000008
+      mnemonic: IRQ_EN
+      width: 16
+      access: rw
+      description: Interrupt enable mask
+      reset_value: 0
