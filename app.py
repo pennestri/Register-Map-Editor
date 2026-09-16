@@ -58,17 +58,28 @@ def _coerce_register(reg: dict) -> dict:
 
     Empty fields are dropped so the YAML stays compact. Numeric fields are
     kept as ints when possible, otherwise the raw string is preserved.
+    Unknown top-level keys (custom fields defined by the user) are passed
+    through verbatim.
     """
+    known_keys = ("address", "mnemonic", "name", "width", "access",
+                  "description", "reset_value")
     out: dict[str, Any] = {}
-    for key in ("address", "mnemonic", "name", "width", "access",
-                "description", "reset_value"):
-        if key in reg and reg[key] not in (None, ""):
+    for key, raw in reg.items():
+        if key == "bits":
+            continue
+        if raw in (None, ""):
+            continue
+        if key in known_keys:
             # Address and reset_value are kept as the user typed them so
             # hex formatting (e.g. "0x10") survives the round-trip.
             if key in ("address", "reset_value"):
-                out[key] = str(reg[key]).strip()
+                out[key] = str(raw).strip()
             else:
-                out[key] = _as_scalar(reg[key])
+                out[key] = _as_scalar(raw)
+        else:
+            # Custom field — pass through. We trust the JSON the browser
+            # sent; _coerce_bit/recursion isn't relevant at register level.
+            out[key] = raw
 
     bits = reg.get("bits")
     if isinstance(bits, list) and bits:

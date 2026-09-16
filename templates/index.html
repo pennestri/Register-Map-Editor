@@ -32,6 +32,16 @@
         <label class="check"><input type="checkbox" data-setting-field="reset_value" checked> Reset value</label>
         <small>Uncheck to hide a field on every register card (and drop it from the exported YAML).</small>
       </fieldset>
+      <fieldset class="settings-cf">
+        <legend>Custom fields</legend>
+        <div class="settings-cf-list" id="settings-cf-list"></div>
+        <div class="settings-cf-add">
+          <input type="text" id="new-cf-key" placeholder="field name" spellcheck="false" autocomplete="off">
+          <input type="text" id="new-cf-default" placeholder="default value" spellcheck="false" autocomplete="off">
+          <button type="button" id="add-cf" class="primary small">+ Add</button>
+        </div>
+        <small>Keys must be valid identifiers (letters, digits, underscore). Defaults are applied to every register. Removing a field deletes its key from every register.</small>
+      </fieldset>
       <button type="button" id="settings-reset" class="ghost small">Reset settings to defaults</button>
     </div>
   </details>
@@ -82,6 +92,11 @@
           <input type="text" data-bind="reset_value" placeholder="0x0" spellcheck="false">
         </label>
       </div>
+
+      <details class="custom-fields" open>
+        <summary>Custom fields</summary>
+        <div class="custom-fields-list" data-role="custom-fields"></div>
+      </details>
 
       <details class="bits" open>
         <summary>Bit fields</summary>

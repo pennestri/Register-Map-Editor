@@ -19,6 +19,13 @@ YAML.
   - **Default fields** checkboxes hide the corresponding input on every
     register card; hidden fields are also dropped from the exported YAML.
     Mnemonic is always shown because it's the register identifier.
+  - **Custom fields** lets you define additional keys (e.g. `vendor`,
+    `ip_version`) that are added to every register with a default value.
+    Custom fields appear in each register's *Custom fields* section as an
+    editable key/value row. Renaming a custom field in settings renames it
+    everywhere; removing a custom field deletes its key from every register.
+    Ad-hoc keys present in uploaded YAML (but not defined here) are also
+    preserved on the register and exported.
   - Settings persist in `localStorage` and can be restored with the
     *Reset settings to defaults* button.
 - **Download YAML** generates `register_map.yaml` from the current form.
@@ -84,6 +91,10 @@ register_map:
       access: rw            # r | w | rw
       description: ...
       reset_value: 0
+      # Any additional top-level keys are user-defined custom fields and
+      # are preserved verbatim through the import/export round-trip.
+      vendor: acme
+      ip_version: "1.0"
       bits:
         - position: 0
           width: 1

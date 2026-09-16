@@ -23,11 +23,20 @@ const REGISTER_FIELDS = ["address", "width", "access", "description", "reset_val
 const MNEMONIC_KEY = "mnemonic";
 const SETTINGS_STORAGE_KEY = "register-map-editor:settings";
 
+// Top-level keys we treat as "standard" on a register. Anything outside this
+// set is a user-defined custom field and is preserved verbatim on export.
+const STANDARD_REGISTER_KEYS = new Set([
+  "address", "mnemonic", "width", "access", "description", "reset_value", "bits",
+]);
+
+const CF_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function defaultSettings() {
   return {
     addressIncrement: "0x4",
     defaultWidth: 32,
     enabledFields: new Set(REGISTER_FIELDS),
+    customFields: [], // [{ key, default }]
   };
 }
 
@@ -74,6 +83,14 @@ function loadSettings() {
     const enabled = Array.isArray(data.enabledFields)
       ? data.enabledFields.filter((k) => REGISTER_FIELDS.includes(k))
       : [...base.enabledFields];
+    const customFields = Array.isArray(data.customFields)
+      ? data.customFields
+          .filter((cf) =>
+            cf && typeof cf === "object" &&
+            typeof cf.key === "string" && CF_KEY_RE.test(cf.key) &&
+            !STANDARD_REGISTER_KEYS.has(cf.key))
+          .map((cf) => ({ key: cf.key, default: cf.default == null ? "" : String(cf.default) }))
+      : [];
     return {
       addressIncrement: typeof data.addressIncrement === "string"
         ? data.addressIncrement
@@ -82,6 +99,7 @@ function loadSettings() {
         ? Number(data.defaultWidth)
         : base.defaultWidth,
       enabledFields: new Set(enabled),
+      customFields,
     };
   } catch (e) {
     return null;
@@ -94,6 +112,7 @@ function saveSettings() {
       addressIncrement: state.settings.addressIncrement,
       defaultWidth: state.settings.defaultWidth,
       enabledFields: [...state.settings.enabledFields],
+      customFields: state.settings.customFields.map((cf) => ({ key: cf.key, default: cf.default })),
     }));
   } catch (e) { /* localStorage disabled or quota exceeded */ }
 }
@@ -123,7 +142,7 @@ function newRegister(overrides = {}) {
     const prev = parseAddrNum(last && last.address);
     if (Number.isFinite(prev)) baseNum = Math.max(0, prev + inc);
   }
-  return Object.assign({
+  const reg = {
     address: formatAddr(baseNum),
     mnemonic: "",
     width: getEffectiveDefaultWidth(),
@@ -131,7 +150,15 @@ function newRegister(overrides = {}) {
     description: "",
     reset_value: "",
     bits: [],
-  }, overrides);
+  };
+  // Apply settings-defined custom fields as defaults. We don't overwrite
+  // an explicit override — the caller may want to seed a register from a
+  // YAML that already specified those keys.
+  for (const cf of state.settings.customFields) {
+    if (!cf.key) continue;
+    if (!(cf.key in overrides)) reg[cf.key] = cf.default ?? "";
+  }
+  return Object.assign(reg, overrides);
 }
 
 function newBit(overrides = {}) {
@@ -212,11 +239,80 @@ function renderRegister(reg, index) {
     render();
   });
 
+  // Custom fields (settings-defined first, then any extras on the register).
+  const cfHost = node.querySelector("[data-role=custom-fields]");
+  if (cfHost) renderCustomFields(reg, cfHost, node);
+
   // Bits.
   const bitsEl = node.querySelector("[data-role=bits]");
   reg.bits.forEach((bit) => bitsEl.appendChild(renderBit(bit, node)));
 
   return node;
+}
+
+function renderCustomFields(reg, host, regCardEl) {
+  host.innerHTML = "";
+  const shown = new Set();
+  // Settings-defined fields first (in definition order).
+  for (const cf of state.settings.customFields) {
+    if (!cf.key) continue;
+    if (!(cf.key in reg)) reg[cf.key] = cf.default ?? "";
+    host.appendChild(renderCustomFieldRow(reg, cf.key, regCardEl));
+    shown.add(cf.key);
+  }
+  // Then any extra non-standard top-level keys preserved from YAML upload.
+  for (const k of Object.keys(reg)) {
+    if (shown.has(k)) continue;
+    if (STANDARD_REGISTER_KEYS.has(k)) continue;
+    host.appendChild(renderCustomFieldRow(reg, k, regCardEl));
+  }
+}
+
+function renderCustomFieldRow(reg, key, regCardEl) {
+  const fromSettings = state.settings.customFields.some((cf) => cf.key === key);
+  const row = document.createElement("div");
+  row.className = "custom-row";
+
+  const wrap = document.createElement("label");
+  const keyEl = document.createElement("span");
+  keyEl.className = "custom-key-name";
+  keyEl.textContent = key;
+  wrap.appendChild(keyEl);
+  row.appendChild(wrap);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "custom-value";
+  input.value = reg[key] == null ? "" : String(reg[key]);
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.placeholder = "(empty)";
+  input.addEventListener("input", () => {
+    const r = findRegister(regCardEl);
+    r[key] = input.value;
+  });
+  row.appendChild(input);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.title = fromSettings
+    ? "Clear value (delete the field in Settings to remove it everywhere)"
+    : "Remove this field from this register";
+  remove.textContent = "×";
+  remove.addEventListener("click", () => {
+    const r = findRegister(regCardEl);
+    if (fromSettings) {
+      r[key] = "";
+      input.value = "";
+    } else {
+      delete r[key];
+      render();
+    }
+  });
+  row.appendChild(remove);
+
+  return row;
 }
 
 function renderBit(bit, regCardEl) {
@@ -328,7 +424,8 @@ async function uploadYaml(file) {
 }
 
 // When we read YAML back, we get whatever the user had — normalize so the
-// form knows which keys to display.
+// form knows which keys to display. Unknown top-level keys are preserved
+// as user-defined custom fields so they round-trip cleanly.
 function normalizeRegister(r) {
   const mnemonic = r.mnemonic ?? r.name ?? "";
   const out = {
@@ -338,8 +435,12 @@ function normalizeRegister(r) {
     access: ACCESS_VALUES.has(r.access) ? r.access : "rw",
     description: r.description ?? "",
     reset_value: r.reset_value ?? "",
-    bits: Array.isArray(r.bits) ? r.bits.map(normalizeBit) : [],
   };
+  for (const [k, v] of Object.entries(r)) {
+    if (STANDARD_REGISTER_KEYS.has(k)) continue;
+    out[k] = v;
+  }
+  out.bits = Array.isArray(r.bits) ? r.bits.map(normalizeBit) : [];
   return out;
 }
 
@@ -354,19 +455,121 @@ function normalizeBit(b) {
   };
 }
 
+// ---- Settings: custom fields sub-section --------------------------------
+
+function renderSettingsCustomFields() {
+  const list = $("#settings-cf-list");
+  if (!list) return;
+  list.innerHTML = "";
+  const cfs = state.settings.customFields;
+  if (cfs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-mini";
+    empty.textContent = "No custom fields defined. Add one below to make it appear on every register.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const cf of cfs) list.appendChild(renderSettingsCustomFieldRow(cf));
+}
+
+function renderSettingsCustomFieldRow(cf) {
+  const row = document.createElement("div");
+  row.className = "settings-cf-row";
+
+  const keyInput = document.createElement("input");
+  keyInput.type = "text";
+  keyInput.value = cf.key;
+  keyInput.placeholder = "field name";
+  keyInput.spellcheck = false;
+  keyInput.autocomplete = "off";
+  keyInput.addEventListener("input", () => {
+    const newKey = keyInput.value.trim();
+    if (!newKey || !CF_KEY_RE.test(newKey)) return; // ignore intermediate invalid
+    if (newKey === cf.key) return;
+    if (state.settings.customFields.some((x) => x !== cf && x.key === newKey)) {
+      setStatus(`Custom field '${newKey}' is already defined.`, "warn");
+      return;
+    }
+    const oldKey = cf.key;
+    cf.key = newKey;
+    for (const r of state.registers) {
+      if (oldKey in r) {
+        r[newKey] = r[oldKey];
+        delete r[oldKey];
+      }
+    }
+    saveSettings();
+    renderSettingsCustomFields();
+    render();
+  });
+  row.appendChild(keyInput);
+
+  const defInput = document.createElement("input");
+  defInput.type = "text";
+  defInput.value = cf.default == null ? "" : String(cf.default);
+  defInput.placeholder = "default value";
+  defInput.spellcheck = false;
+  defInput.autocomplete = "off";
+  defInput.addEventListener("input", () => {
+    cf.default = defInput.value;
+    saveSettings();
+    // Default applies to NEW registers only; existing values are preserved.
+  });
+  row.appendChild(defInput);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "danger";
+  remove.title = "Remove this field from every register";
+  remove.textContent = "×";
+  remove.addEventListener("click", () => {
+    const idx = state.settings.customFields.indexOf(cf);
+    if (idx < 0) return;
+    if (!confirm(`Remove custom field "${cf.key}" from every register?`)) return;
+    state.settings.customFields.splice(idx, 1);
+    saveSettings();
+    for (const r of state.registers) delete r[cf.key];
+    renderSettingsCustomFields();
+    render();
+  });
+  row.appendChild(remove);
+
+  return row;
+}
+
 // Export projection: drop register fields the user has hidden in the
-// settings panel. Mnemonic is always included. Bit fields are untouched.
+// settings panel. Mnemonic is always included. Custom fields (defined in
+// settings or carried over from a YAML upload) are emitted in definition
+// order, followed by any ad-hoc extras. Bit fields always go last.
 function projectForExport(reg) {
-  const order = ["address", MNEMONIC_KEY, "width", "access", "description", "reset_value"];
+  const standardOrder = ["address", MNEMONIC_KEY, "width", "access", "description", "reset_value"];
   const out = {};
-  for (const key of order) {
+  for (const key of standardOrder) {
     if (key === MNEMONIC_KEY || state.settings.enabledFields.has(key)) {
-      out[key] = reg[key];
+      if (reg[key] != null && reg[key] !== "") out[key] = reg[key];
     }
   }
-  if (Array.isArray(reg.bits) && reg.bits.length) {
-    out.bits = reg.bits;
+  const emitted = new Set(Object.keys(out));
+  // Settings-defined custom fields, in definition order.
+  for (const cf of state.settings.customFields) {
+    if (!cf.key) continue;
+    const v = reg[cf.key];
+    if (v != null && v !== "") {
+      out[cf.key] = v;
+      emitted.add(cf.key);
+    }
   }
+  // Any extra non-standard keys preserved from upload. (Standard keys
+  // hidden by field-toggles stay hidden; only true custom fields are
+  // picked up here.)
+  for (const [k, v] of Object.entries(reg)) {
+    if (STANDARD_REGISTER_KEYS.has(k)) continue;
+    if (emitted.has(k)) continue;
+    if (k === "bits") continue;
+    if (v == null || v === "") continue;
+    out[k] = v;
+  }
+  if (Array.isArray(reg.bits) && reg.bits.length) out.bits = reg.bits;
   return out;
 }
 
@@ -397,6 +600,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const addrIncInput = $("#setting-addr-inc");
   const defaultWidthInput = $("#setting-default-width");
   const fieldCheckboxes = document.querySelectorAll("[data-setting-field]");
+  const cfList = $("#settings-cf-list");
+  const newCfKey = $("#new-cf-key");
+  const newCfDefault = $("#new-cf-default");
 
   function syncSettingsUI() {
     addrIncInput.value = state.settings.addressIncrement;
@@ -404,6 +610,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fieldCheckboxes.forEach((cb) => {
       cb.checked = state.settings.enabledFields.has(cb.dataset.settingField);
     });
+    renderSettingsCustomFields();
   }
   syncSettingsUI();
 
@@ -431,11 +638,54 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("#settings-reset").addEventListener("click", () => {
     if (!confirm("Reset register-map settings to defaults?")) return;
+    // Drop any keys from every register that the previous settings had
+    // defined as custom fields, so the editor matches the default schema.
+    const previousKeys = new Set(
+      state.settings.customFields.map((cf) => cf.key).filter(Boolean)
+    );
     state.settings = defaultSettings();
+    if (previousKeys.size > 0) {
+      for (const r of state.registers) {
+        for (const k of previousKeys) delete r[k];
+      }
+    }
     syncSettingsUI();
     saveSettings();
     render();
   });
+
+  // ---- Custom-fields sub-section -----------------------------------------
+  $("#add-cf").addEventListener("click", () => {
+    const key = newCfKey.value.trim();
+    const def = newCfDefault.value;
+    if (!key) { setStatus("Custom field name is required.", "warn"); newCfKey.focus(); return; }
+    if (!CF_KEY_RE.test(key)) {
+      setStatus("Field name must be a valid identifier (letters, digits, underscore).", "warn");
+      newCfKey.focus();
+      return;
+    }
+    if (STANDARD_REGISTER_KEYS.has(key)) {
+      setStatus(`'${key}' is a reserved name (use a different key).`, "warn");
+      newCfKey.focus();
+      return;
+    }
+    if (state.settings.customFields.some((cf) => cf.key === key)) {
+      setStatus(`Custom field '${key}' is already defined.`, "warn");
+      newCfKey.focus();
+      return;
+    }
+    state.settings.customFields.push({ key, default: def });
+    saveSettings();
+    for (const r of state.registers) {
+      if (!(key in r)) r[key] = def;
+    }
+    newCfKey.value = "";
+    newCfDefault.value = "";
+    renderSettingsCustomFields();
+    render();
+  });
+  newCfKey.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#add-cf").click(); } });
+  newCfDefault.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#add-cf").click(); } });
 
   // ---- Toolbar wiring ---------------------------------------------------
   $("#add-register").addEventListener("click", addRegister);
