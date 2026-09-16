@@ -12,6 +12,7 @@ Register Map editor — a small Flask app.
 from __future__ import annotations
 
 import io
+import re
 from typing import Any
 
 import yaml
@@ -19,6 +20,20 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024  # 4 MB upload cap
+
+# Standard register keys (these are reserved; user-defined "custom fields"
+# can't collide with them). Mirrors STANDARD_REGISTER_KEYS on the JS side.
+STANDARD_REGISTER_KEYS: frozenset[str] = frozenset({
+    "address", "mnemonic", "width", "access", "description", "reset_value", "bits",
+})
+
+# Toggleable fields exposed in the settings panel (the "Default fields"
+# checkboxes). Mirrors REGISTER_FIELDS on the JS side.
+TOGGLEABLE_REGISTER_FIELDS: tuple[str, ...] = (
+    "address", "width", "access", "description", "reset_value",
+)
+
+CUSTOM_FIELD_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # ---------------------------------------------------------------------------
 # YAML helpers
@@ -115,6 +130,64 @@ def _as_scalar(value: Any) -> Any:
     return value
 
 
+def _coerce_settings(raw: Any) -> dict[str, Any]:
+    """Validate and normalise an editor settings dict.
+
+    The settings panel state has four sub-keys:
+      address_increment: str (hex or decimal; kept as a string)
+      default_width:     int  (1..1024 bits)
+      enabled_fields:    list[str] of fields to show
+      custom_fields:     list[{key, default}] of user-defined fields
+
+    Unknown keys are dropped. Invalid values fall back to defaults. Returns
+    an empty dict if nothing usable came in.
+    """
+    out: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        return out
+
+    inc = raw.get("address_increment")
+    if isinstance(inc, str) and inc.strip():
+        out["address_increment"] = inc.strip()
+    elif isinstance(inc, (int, float)) and not isinstance(inc, bool):
+        out["address_increment"] = str(int(inc))
+
+    width = raw.get("default_width")
+    try:
+        w = int(width)
+        if 1 <= w <= 1024:
+            out["default_width"] = w
+    except (TypeError, ValueError):
+        pass
+
+    ef = raw.get("enabled_fields")
+    if isinstance(ef, list):
+        cleaned = [k for k in ef if isinstance(k, str) and k in TOGGLEABLE_REGISTER_FIELDS]
+        if cleaned:
+            out["enabled_fields"] = cleaned
+
+    cf = raw.get("custom_fields")
+    if isinstance(cf, list):
+        cleaned = []
+        for entry in cf:
+            if not isinstance(entry, dict):
+                continue
+            k = entry.get("key")
+            if not isinstance(k, str) or not CUSTOM_FIELD_KEY_RE.match(k):
+                continue
+            if k in STANDARD_REGISTER_KEYS:
+                continue
+            def_val = entry.get("default", "")
+            cleaned.append({
+                "key": k,
+                "default": str(def_val) if def_val is not None else "",
+            })
+        if cleaned:
+            out["custom_fields"] = cleaned
+
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -132,16 +205,19 @@ def generate():
         return jsonify({"error": "registers must be a list"}), 400
 
     registers = [_coerce_register(r) for r in raw_registers if isinstance(r, dict)]
+    settings = _coerce_settings(payload.get("settings"))
 
-    doc = {
-        "register_map": {
-            "metadata": {
-                "generator": "register-map-app",
-                "version": "1.0",
-            },
-            "registers": registers,
-        }
+    register_map: dict[str, Any] = {
+        "metadata": {
+            "generator": "register-map-app",
+            "version": "1.0",
+        },
     }
+    if settings:
+        register_map["settings"] = settings
+    register_map["registers"] = registers
+
+    doc = {"register_map": register_map}
 
     buf = io.StringIO()
     yaml.safe_dump(
@@ -182,7 +258,16 @@ def upload():
                       "'register_map: registers:' structure."}
         ), 400
 
-    return jsonify({"registers": registers})
+    # Pull settings out of register_map.settings if present. Returned as None
+    # (not {}) so the client can distinguish "no settings in file" from
+    # "settings in file but every key invalid".
+    settings = None
+    if isinstance(data, dict):
+        rm = data.get("register_map")
+        if isinstance(rm, dict) and isinstance(rm.get("settings"), dict):
+            settings = _coerce_settings(rm["settings"]) or None
+
+    return jsonify({"registers": registers, "settings": settings})
 
 
 @app.errorhandler(413)

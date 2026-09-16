@@ -386,12 +386,15 @@ async function downloadYaml() {
     setStatus("Add at least one register before exporting.", "warn");
     return;
   }
-  const payload = state.registers.map(projectForExport);
+  const payload = {
+    registers: state.registers.map(projectForExport),
+    settings: projectSettings(),
+  };
   try {
     const res = await fetch("/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ registers: payload }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -416,8 +419,19 @@ async function uploadYaml(file) {
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     const regs = (data.registers || []).map(normalizeRegister);
     state.registers = regs;
+    // Apply settings from the file if it carried any. A missing / null
+    // `settings` field means the file is older or hand-written: leave the
+    // editor's current settings untouched.
+    let settingsApplied = false;
+    if (data.settings && typeof data.settings === "object" && Object.keys(data.settings).length > 0) {
+      settingsApplied = applyImportedSettings(data.settings);
+    }
     render();
-    setStatus(`Loaded ${regs.length} register(s) from ${file.name}.`, "ok");
+    if (settingsApplied) {
+      setStatus(`Loaded ${regs.length} register(s) and applied settings from ${file.name}.`, "ok");
+    } else {
+      setStatus(`Loaded ${regs.length} register(s) from ${file.name}.`, "ok");
+    }
   } catch (exc) {
     setStatus("Upload failed: " + exc.message, "err");
   }
@@ -455,7 +469,7 @@ function normalizeBit(b) {
   };
 }
 
-// ---- Settings: custom fields sub-section --------------------------------
+// ---- Settings: custom fields sub-section -------------------------------
 
 function renderSettingsCustomFields() {
   const list = $("#settings-cf-list");
@@ -537,6 +551,85 @@ function renderSettingsCustomFieldRow(cf) {
   return row;
 }
 
+// Trigger re-sync of settings inputs (address increment, default width,
+// field toggles, custom-fields list) from `state.settings`. Safe to call
+// from anywhere; looks the inputs up in the DOM each invocation.
+function syncSettingsUI() {
+  const addrIncInput = $("#setting-addr-inc");
+  const defaultWidthInput = $("#setting-default-width");
+  const fieldCheckboxes = document.querySelectorAll("[data-setting-field]");
+  if (addrIncInput) addrIncInput.value = state.settings.addressIncrement;
+  if (defaultWidthInput) defaultWidthInput.value = state.settings.defaultWidth;
+  fieldCheckboxes.forEach((cb) => {
+    cb.checked = state.settings.enabledFields.has(cb.dataset.settingField);
+  });
+  renderSettingsCustomFields();
+}
+
+// Settings round-trip: serialize the current settings panel state to the
+// shape written under register_map.settings in the YAML, and apply a
+// settings object received from /upload back into the editor.
+function projectSettings() {
+  return {
+    address_increment: state.settings.addressIncrement,
+    default_width: state.settings.defaultWidth,
+    enabled_fields: [...state.settings.enabledFields],
+    custom_fields: state.settings.customFields.map((cf) => ({
+      key: cf.key,
+      default: cf.default,
+    })),
+  };
+}
+
+function applyImportedSettings(s) {
+  if (!s || typeof s !== "object") return false;
+  const base = defaultSettings();
+  const newSettings = {
+    addressIncrement: (() => {
+      const inc = s.address_increment;
+      if (typeof inc === "string" && inc.trim()) return inc.trim();
+      if (typeof inc === "number" && Number.isFinite(inc)) return String(Math.trunc(inc));
+      return base.addressIncrement;
+    })(),
+    defaultWidth: Number.isFinite(Number(s.default_width))
+      ? Math.min(1024, Math.max(1, Math.floor(Number(s.default_width))))
+      : base.defaultWidth,
+    enabledFields: (() => {
+      if (!Array.isArray(s.enabled_fields)) return new Set(base.enabledFields);
+      if (s.enabled_fields.length === 0) return new Set(); // explicit "hide all"
+      const filtered = s.enabled_fields.filter((k) => REGISTER_FIELDS.includes(k));
+      // All entries were bogus — ignore and fall back to defaults.
+      return new Set(filtered.length > 0 ? filtered : base.enabledFields);
+    })(),
+    customFields: (Array.isArray(s.custom_fields) ? s.custom_fields : [])
+      .filter((cf) =>
+        cf && typeof cf === "object" &&
+        typeof cf.key === "string" && CF_KEY_RE.test(cf.key) &&
+        !STANDARD_REGISTER_KEYS.has(cf.key))
+      .map((cf) => ({
+        key: cf.key,
+        default: cf.default == null ? "" : String(cf.default),
+      })),
+  };
+  state.settings = newSettings;
+
+  // For every existing register: if it lacks one of the imported custom
+  // fields, populate it with the imported default. Existing values are
+  // preserved (we don't overwrite user-edited data on the round trip).
+  const importedDefaults = new Map(
+    newSettings.customFields.map((cf) => [cf.key, cf.default ?? ""])
+  );
+  for (const r of state.registers) {
+    for (const [k, def] of importedDefaults) {
+      if (!(k in r)) r[k] = def;
+    }
+  }
+
+  saveSettings();
+  syncSettingsUI(); // refresh the panels to reflect the new state.
+  return true;
+}
+
 // Export projection: drop register fields the user has hidden in the
 // settings panel. Mnemonic is always included. Custom fields (defined in
 // settings or carried over from a YAML upload) are emitted in definition
@@ -604,14 +697,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const newCfKey = $("#new-cf-key");
   const newCfDefault = $("#new-cf-default");
 
-  function syncSettingsUI() {
-    addrIncInput.value = state.settings.addressIncrement;
-    defaultWidthInput.value = state.settings.defaultWidth;
-    fieldCheckboxes.forEach((cb) => {
-      cb.checked = state.settings.enabledFields.has(cb.dataset.settingField);
-    });
-    renderSettingsCustomFields();
-  }
+  // syncSettingsUI is hoisted at the top level so applyImportedSettings
+  // (also top-level) can call it after a YAML upload.
   syncSettingsUI();
 
   addrIncInput.addEventListener("input", () => {

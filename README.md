@@ -26,6 +26,12 @@ YAML.
     everywhere; removing a custom field deletes its key from every register.
     Ad-hoc keys present in uploaded YAML (but not defined here) are also
     preserved on the register and exported.
+  - **Settings round-trip**: every export writes the current settings under
+    `register_map.settings:` in the YAML. Uploading a file that carries
+    settings applies them to the editor (existing per-register values
+    survive; only registers missing a custom field get the imported default).
+    Files without a `settings:` block leave the editor's local settings
+    untouched.
   - Settings persist in `localStorage` and can be restored with the
     *Reset settings to defaults* button.
 - **Download YAML** generates `register_map.yaml` from the current form.
@@ -84,6 +90,20 @@ register_map:
   metadata:
     generator: register-map-app
     version: "1.0"
+  settings:                       # editor settings; round-trippable
+    address_increment: '0x4'      # hex or decimal string; default for new registers
+    default_width: 32             # bits; default for new registers
+    enabled_fields:               # which standard fields to show per register
+      - address
+      - width
+      - access
+      - description
+      - reset_value
+    custom_fields:                # user-defined register keys
+      - key: vendor
+        default: acme
+      - key: ip_version
+        default: "1.0"
   registers:
     - address: 0x00000000
       mnemonic: CTRL
