@@ -12,6 +12,30 @@
     <p class="sub">Define registers and bit fields, then export a YAML register map or import one for editing.</p>
   </header>
 
+  <details class="settings" id="settings" open>
+    <summary>Register map settings</summary>
+    <div class="settings-body">
+      <label>Address increment
+        <input type="text" id="setting-addr-inc" placeholder="0x4" spellcheck="false">
+        <small>Applied to the default address of each newly added register (previous register&apos;s address + this value). Hex (<code>0x4</code>) or decimal.</small>
+      </label>
+      <label>Default data size (bits)
+        <input type="number" id="setting-default-width" min="1" max="1024" step="1">
+        <small>Used as the default width for newly added registers.</small>
+      </label>
+      <fieldset class="settings-fields">
+        <legend>Default fields shown per register</legend>
+        <label class="check"><input type="checkbox" data-setting-field="address" checked> Address</label>
+        <label class="check"><input type="checkbox" data-setting-field="width" checked> Width</label>
+        <label class="check"><input type="checkbox" data-setting-field="access" checked> Access</label>
+        <label class="check"><input type="checkbox" data-setting-field="description" checked> Description</label>
+        <label class="check"><input type="checkbox" data-setting-field="reset_value" checked> Reset value</label>
+        <small>Uncheck to hide a field on every register card (and drop it from the exported YAML).</small>
+      </fieldset>
+      <button type="button" id="settings-reset" class="ghost small">Reset settings to defaults</button>
+    </div>
+  </details>
+
   <section class="toolbar">
     <label class="upload">
       <input type="file" id="upload-input" accept=".yaml,.yml,text/yaml,application/x-yaml">

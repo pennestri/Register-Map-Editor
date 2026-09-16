@@ -10,6 +10,17 @@ YAML.
   reset value.
 - Per register: any number of bit-field rows with `position`, `width`, `name`,
   access and description (the bit's function).
+- **Register map settings** at the top of the page lets you tune the editor
+  to match your register-map conventions:
+  - **Address increment** applied to the default address of each newly added
+    register (default `0x4`; hex `0x..` or decimal both accepted).
+  - **Default data size** used as the default width for newly added registers
+    (default `32` bits).
+  - **Default fields** checkboxes hide the corresponding input on every
+    register card; hidden fields are also dropped from the exported YAML.
+    Mnemonic is always shown because it's the register identifier.
+  - Settings persist in `localStorage` and can be restored with the
+    *Reset settings to defaults* button.
 - **Download YAML** generates `register_map.yaml` from the current form.
 - **Upload YAML** loads an existing register map back into the editor for
   editing.

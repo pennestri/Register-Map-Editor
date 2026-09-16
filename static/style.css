@@ -51,6 +51,118 @@ header .sub {
 }
 .toolbar .spacer { flex: 1; }
 
+/* ---- Register map settings -------------------------------------------- */
+.settings {
+  margin: 14px 28px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 16px;
+}
+.settings > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  list-style: none;
+  padding: 12px 0;
+  user-select: none;
+}
+.settings > summary::-webkit-details-marker { display: none; }
+.settings > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 6px;
+  transition: transform 0.12s;
+}
+.settings[open] > summary::before { content: "▾"; }
+
+.settings-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 18px;
+  padding: 8px 0 16px;
+}
+.settings-body > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-body > label small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.settings-body code {
+  background: var(--panel-2);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+.settings-body input[type=text],
+.settings-body input[type=number] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+}
+.settings-body input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.settings-fields {
+  display: grid;
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+  margin: 0;
+}
+.settings-fields legend {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 4px;
+}
+.settings-fields label.check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-fields label.check input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.settings-fields small {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+button.small {
+  font-size: 12px;
+  padding: 5px 10px;
+  align-self: start;
+  justify-self: start;
+}
+
 button, .upload span {
   font: inherit;
   color: var(--text);
