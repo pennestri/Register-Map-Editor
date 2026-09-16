@@ -16,16 +16,46 @@ YAML.
 
 ## Run
 
+The project is managed with [uv](https://docs.astral.sh/uv/). Install uv
+once (`curl -LsSf https://astral.sh/uv/install.sh | sh`), then from the repo
+root:
+
 ```bash
-cd register-map-app
+# One-shot run (uv creates .venv and installs deps on first invocation)
+uv run python app.py
+# open http://127.0.0.1:5000
+```
+
+Other common entry points:
+
+```bash
+uv sync                       # create .venv and install deps
+uv run app                    # same as `uv run python app.py`
+uv run register-map-editor    # via the console script defined in pyproject.toml
+```
+
+Bind to all interfaces on a custom port with env vars:
+
+```bash
+HOST=0.0.0.0 PORT=8080 uv run python app.py
+```
+
+Pin the Python interpreter (optional — uv honours `.python-version`):
+
+```bash
+uv python install 3.12
+```
+
+### Without uv
+
+If you prefer the standard tooling, the legacy workflow still works:
+
+```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 python app.py
-# open http://127.0.0.1:5000
 ```
-
-You can also bind to all interfaces with `HOST=0.0.0.0 PORT=8080 python app.py`.
 
 ## YAML format
 

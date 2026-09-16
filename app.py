@@ -179,9 +179,14 @@ def too_large(_exc):
     return jsonify({"error": "File too large (max 4 MB)."}), 413
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point used by `python app.py` and the `register-map-editor` script."""
     # Bind to localhost by default; override with HOST=0.0.0.0 if needed.
     import os
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
     app.run(host=host, port=port, debug=True)
+
+
+if __name__ == "__main__":
+    main()
