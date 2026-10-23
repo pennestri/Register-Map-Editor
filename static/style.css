@@ -163,6 +163,17 @@ button.small {
   justify-self: start;
 }
 
+/* Inline error state used by typed custom-field inputs. */
+.input-error {
+  border-color: var(--danger) !important;
+  outline-color: var(--danger) !important;
+  background: #2a1414;
+}
+
+/* The add-form's options box toggles via [hidden]; make sure no grid/flex
+   rule can force it back on. */
+[hidden] { display: none !important; }
+
 /* Settings: custom fields sub-section */
 .settings-cf {
   display: grid;
@@ -186,11 +197,15 @@ button.small {
 }
 .settings-cf-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 32px;
+  grid-template-columns: 1fr 110px 1fr 1fr 32px;
   gap: 6px;
   align-items: center;
 }
-.settings-cf-row input {
+/* Non-select rows have no options editor, so their default control fills
+   both value columns. */
+.settings-cf-row .span2 { grid-column: span 2; }
+.settings-cf-row input,
+.settings-cf-row select {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
@@ -200,7 +215,12 @@ button.small {
   font-family: var(--mono);
   width: 100%;
 }
-.settings-cf-row input:focus {
+.settings-cf-row select {
+  font-family: inherit;
+  cursor: pointer;
+}
+.settings-cf-row input:focus,
+.settings-cf-row select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
@@ -209,11 +229,12 @@ button.small {
 
 .settings-cf-add {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 110px 1fr 1fr auto;
   gap: 6px;
   align-items: center;
 }
-.settings-cf-add input {
+.settings-cf-add input,
+.settings-cf-add select {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
@@ -223,12 +244,24 @@ button.small {
   font-family: var(--mono);
   width: 100%;
 }
-.settings-cf-add input:focus {
+.settings-cf-add select {
+  font-family: inherit;
+  cursor: pointer;
+}
+.settings-cf-add input:focus,
+.settings-cf-add select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
 }
-.settings-cf-add .small { font-size: 12px; padding: 6px 12px; }
+/* The options input is hidden for non-select types, which would otherwise
+   leave the button stranded in a 1fr column — pin it to the last one. */
+.settings-cf-add .small {
+  font-size: 12px;
+  padding: 6px 12px;
+  grid-column: -1;
+  justify-self: end;
+}
 .settings-cf small {
   font-size: 11px;
   color: var(--muted);
@@ -286,7 +319,7 @@ button.small {
   padding: 4px 6px;
   font-size: 12px;
 }
-.custom-row input.custom-value {
+.custom-row .custom-value {
   font: inherit;
   color: var(--text);
   background: #131722;
@@ -294,12 +327,40 @@ button.small {
   border-radius: 5px;
   padding: 4px 6px;
   font-family: var(--mono);
+  width: 100%;
+  min-width: 0;
 }
-.custom-row input:focus {
+.custom-row select.custom-value { cursor: pointer; }
+.custom-row input:focus,
+.custom-row select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
 }
+/* Boolean custom field: a checkbox plus its current value as text. */
+.custom-row .custom-bool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.custom-row .custom-bool input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.custom-row .custom-bool.unset { color: var(--muted); }
+.custom-row .custom-bool.unset input[type="checkbox"] { opacity: 0.5; }
 .custom-row .danger { align-self: end; height: 28px; }
 
 button, .upload span {

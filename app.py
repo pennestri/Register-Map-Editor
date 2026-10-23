@@ -35,6 +35,16 @@ TOGGLEABLE_REGISTER_FIELDS: tuple[str, ...] = (
 
 CUSTOM_FIELD_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Mirrors CUSTOM_FIELD_TYPES on the JS side.
+CUSTOM_FIELD_TYPES: frozenset[str] = frozenset(
+    {"string", "integer", "float", "select", "boolean"}
+)
+
+# Words accepted as booleans in a custom-field default. Mirrors TRUE_WORDS /
+# FALSE_WORDS on the JS side.
+TRUE_WORDS: frozenset[str] = frozenset({"true", "1", "yes", "y", "on"})
+FALSE_WORDS: frozenset[str] = frozenset({"false", "0", "no", "n", "off"})
+
 # ---------------------------------------------------------------------------
 # YAML helpers
 # ---------------------------------------------------------------------------
@@ -114,6 +124,60 @@ def _coerce_bit(bit: dict) -> dict:
     return out
 
 
+def _coerce_typed_default(value: Any, ftype: str, options: list[str] | None = None) -> Any:
+    """Coerce a settings-payload default value to its declared field type.
+
+    Mirrors parseTypedValue() on the JS side: strings stay strings, integer
+    accepts decimal / 0x.., float accepts any finite number, boolean accepts
+    the usual truthy/falsey words, and select must match one of its options.
+    An unset (None or empty) value stays unset for every type so an absent
+    default isn't invented. Anything that can't parse to the declared type
+    falls back to unset ("").
+
+    `options` is the allowed value list of a `select` field; it is ignored by
+    every other type.
+    """
+    if value is None or value == "":
+        return ""
+    if ftype == "string":
+        return str(value)
+    if ftype == "integer":
+        # `int(x, 0)` only accepts str/bytes/bytearray; pass native ints
+        # through unchanged.
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value, 0)  # base 0 => accepts "0x.." and decimal
+        except (TypeError, ValueError):
+            return ""
+    if ftype == "float":
+        if isinstance(value, bool):
+            return float(int(value))
+        if isinstance(value, (int, float)):
+            f = float(value)
+            return f if f == f and abs(f) != float("inf") else ""
+        try:
+            f = float(value)
+            return f if f == f and abs(f) != float("inf") else ""
+        except (TypeError, ValueError):
+            return ""
+    if ftype == "boolean":
+        if isinstance(value, bool):
+            return value
+        word = str(value).strip().lower()
+        if word in TRUE_WORDS:
+            return True
+        if word in FALSE_WORDS:
+            return False
+        return ""
+    if ftype == "select":
+        candidate = str(value).strip()
+        return candidate if candidate in (options or []) else ""
+    return value
+
+
 def _as_scalar(value: Any) -> Any:
     """Try to keep numbers as ints, but pass strings (e.g. '0x10') through."""
     if isinstance(value, (int, float, bool)):
@@ -130,6 +194,27 @@ def _as_scalar(value: Any) -> Any:
     return value
 
 
+def _coerce_options(raw: Any) -> list[str]:
+    """Normalise a select field's option list.
+
+    Accepts a list of scalars or a comma/newline separated string (how the
+    settings UI writes it). Entries are trimmed, blanks dropped and
+    duplicates removed, matching parseOptions() on the JS side.
+    """
+    if isinstance(raw, str):
+        items: Any = raw.split(",")
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return []
+    out: list[str] = []
+    for item in items:
+        s = str(item).strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
 def _coerce_settings(raw: Any) -> dict[str, Any]:
     """Validate and normalise an editor settings dict.
 
@@ -137,7 +222,7 @@ def _coerce_settings(raw: Any) -> dict[str, Any]:
       address_increment: str (hex or decimal; kept as a string)
       default_width:     int  (1..1024 bits)
       enabled_fields:    list[str] of fields to show
-      custom_fields:     list[{key, default}] of user-defined fields
+      custom_fields:     list[{key, type, default, options}] of user-defined fields
 
     Unknown keys are dropped. Invalid values fall back to defaults. Returns
     an empty dict if nothing usable came in.
@@ -177,11 +262,18 @@ def _coerce_settings(raw: Any) -> dict[str, Any]:
                 continue
             if k in STANDARD_REGISTER_KEYS:
                 continue
+            t = entry.get("type")
+            ftype = t if isinstance(t, str) and t in CUSTOM_FIELD_TYPES else "string"
+            options = _coerce_options(entry.get("options"))
             def_val = entry.get("default", "")
-            cleaned.append({
-                "key": k,
-                "default": str(def_val) if def_val is not None else "",
-            })
+            # Coerce the default against the declared type so a YAML with
+            # `type: integer` + `default: 0x10` arrives at the JS side as
+            # the int 16 (matches how the editor writes it).
+            coerced = _coerce_typed_default(def_val, ftype, options)
+            field: dict[str, Any] = {"key": k, "type": ftype, "default": coerced}
+            if ftype == "select":
+                field["options"] = options
+            cleaned.append(field)
         if cleaned:
             out["custom_fields"] = cleaned
 

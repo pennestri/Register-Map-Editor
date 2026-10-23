@@ -2,6 +2,32 @@ register_map:
   metadata:
     generator: register-map-app
     version: "1.0"
+  settings:
+    address_increment: '0x4'
+    default_width: 32
+    enabled_fields:
+      - address
+      - width
+      - access
+      - description
+      - reset_value
+    custom_fields:
+      - key: vendor
+        type: string
+        default: acme
+      - key: ip_version
+        type: integer
+        default: 16
+      - key: mode
+        type: select
+        default: normal
+        options:
+          - fast
+          - normal
+          - slow
+      - key: latched
+        type: boolean
+        default: true
   registers:
     - address: 0x00000000
       mnemonic: CTRL
@@ -9,6 +35,10 @@ register_map:
       access: rw
       description: Top-level control register
       reset_value: 0
+      vendor: acme
+      ip_version: 16
+      mode: normal
+      latched: true
       bits:
         - position: 0
           width: 1
@@ -34,6 +64,10 @@ register_map:
       access: r
       description: Current status flags
       reset_value: 0
+      vendor: acme
+      ip_version: 16
+      mode: slow
+      latched: false
       bits:
         - position: 0
           width: 1
@@ -53,3 +87,7 @@ register_map:
       access: rw
       description: Interrupt enable mask
       reset_value: 0
+      vendor: acme
+      ip_version: 16
+      mode: fast
+      latched: true

@@ -21,11 +21,27 @@ YAML.
     Mnemonic is always shown because it's the register identifier.
   - **Custom fields** lets you define additional keys (e.g. `vendor`,
     `ip_version`) that are added to every register with a default value.
+    Each field has a **type** that decides which input the register shows
+    and how the value is emitted in YAML:
+    - `string` (default): free text, stored and emitted as a YAML string.
+    - `integer`: accepts decimal or `0x..` notation, emits unquoted (so the
+      YAML shows `version: 16`, not `version: "16"`).
+    - `float`: accepts decimals, emits unquoted (so the YAML shows
+      `ratio: 3.14`).
+    - `select`: renders a **drop-down** on every register. You supply the
+      available options as a comma separated list in the settings panel;
+      only those values can be picked, and the list is exported as
+      `options:`. A value that is no longer in the list (after you edited
+      the options) is kept and flagged as `(unknown)` rather than dropped.
+    - `boolean`: renders a **checkbox** on every register and emits a real
+      `true` / `false`. An unticked box stores `false`; use the row's `×`
+      button to leave the field unset so it is omitted from the export.
     Custom fields appear in each register's *Custom fields* section as an
-    editable key/value row. Renaming a custom field in settings renames it
-    everywhere; removing a custom field deletes its key from every register.
-    Ad-hoc keys present in uploaded YAML (but not defined here) are also
-    preserved on the register and exported.
+    editable key/value row. The settings panel shows the same row with the
+    options editor and a type-appropriate default. Renaming a custom field
+    in settings renames it everywhere; removing a custom field deletes its
+    key from every register. Ad-hoc keys present in uploaded YAML (but not
+    defined here) are also preserved on the register and exported.
   - **Settings round-trip**: every export writes the current settings under
     `register_map.settings:` in the YAML. Uploading a file that carries
     settings applies them to the editor (existing per-register values
@@ -101,9 +117,21 @@ register_map:
       - reset_value
     custom_fields:                # user-defined register keys
       - key: vendor
+        type: string                # string | integer | float | select | boolean
         default: acme
       - key: ip_version
-        default: "1.0"
+        type: integer
+        default: "1.0"              # emitted as an unquoted integer in YAML
+      - key: mode
+        type: select                # drop-down; only these values are allowed
+        default: normal
+        options:
+          - fast
+          - normal
+          - slow
+      - key: latched
+        type: boolean               # checkbox on each register
+        default: true
   registers:
     - address: 0x00000000
       mnemonic: CTRL
@@ -115,6 +143,8 @@ register_map:
       # are preserved verbatim through the import/export round-trip.
       vendor: acme
       ip_version: "1.0"
+      mode: normal
+      latched: true
       bits:
         - position: 0
           width: 1
