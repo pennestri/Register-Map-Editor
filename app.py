@@ -289,6 +289,13 @@ def index() -> str:
     return render_template("index.html")
 
 
+@app.route("/settings")
+def settings() -> str:
+    """Register-map settings live on their own page; both pages share state
+    through localStorage (see static/core.js)."""
+    return render_template("settings.html")
+
+
 @app.route("/generate", methods=["POST"])
 def generate():
     payload = request.get_json(silent=True) or {}

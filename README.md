@@ -5,12 +5,19 @@ YAML.
 
 ## Features
 
+- Two pages:
+  - **`/`** — the register editor: the register list, bit rows, upload and
+    export.
+  - **`/settings`** — register-map settings, on its own page. Every change
+    saves to `localStorage` as you make it, so the editor picks it up the
+    next time it loads; there is no save button and no way to lose work by
+    navigating away.
 - Add as many registers as you like.
 - Per register: address, mnemonic, width, access (`r` / `w` / `rw`), description,
   reset value.
 - Per register: any number of bit-field rows with `position`, `width`, `name`,
   access and description (the bit's function).
-- **Register map settings** at the top of the page lets you tune the editor
+- **Register map settings** (its own page, `/settings`) lets you tune the editor
   to match your register-map conventions:
   - **Address increment** applied to the default address of each newly added
     register (default `0x4`; hex `0x..` or decimal both accepted).
@@ -50,6 +57,10 @@ YAML.
     untouched.
   - Settings persist in `localStorage` and can be restored with the
     *Reset settings to defaults* button.
+- Registers live only in the browser tab — there is no server-side document
+  to save them into, so reloading or navigating to `/settings` discards
+  unsaved register edits (the editor asks before it sends you there).
+  Download the YAML first if you want to keep your work.
 - **Download YAML** generates `register_map.yaml` from the current form.
 - **Upload YAML** loads an existing register map back into the editor for
   editing.
@@ -63,7 +74,8 @@ root:
 ```bash
 # One-shot run (uv creates .venv and installs deps on first invocation)
 uv run python app.py
-# open http://127.0.0.1:5000
+# editor:  http://127.0.0.1:5000/
+# settings: http://127.0.0.1:5000/settings
 ```
 
 Other common entry points:
@@ -96,6 +108,25 @@ python3 -m venv .venv
 pip install -r requirements.txt
 python app.py
 ```
+
+## Project layout
+
+```
+app.py               Flask app: routes + YAML coercion
+templates/
+  index.html         editor page      (loads core.js + app.js)
+  settings.html      settings page    (loads core.js + settings.js)
+static/
+  core.js            shared: custom-field type system, state, localStorage
+  app.js             editor page: registers, bits, upload/export
+  settings.js        settings page: the settings panel
+  style.css
+```
+
+`core.js` is loaded by both pages. Classic scripts share one global scope, so
+`state` and the type helpers are defined once and both pages write to the same
+`localStorage` key — that is how a field defined on `/settings` shows up on a
+register in `/`.
 
 ## YAML format
 
@@ -164,5 +195,6 @@ See `examples/sample_register_map.yaml` for a full example.
 | Method | Path        | Body / form          | Returns                          |
 |--------|-------------|----------------------|----------------------------------|
 | GET    | `/`         | —                    | HTML editor page                 |
+| GET    | `/settings` | —                    | HTML settings page               |
 | POST   | `/generate` | JSON `{registers:[]}`| `register_map.yaml` (attachment) |
 | POST   | `/upload`   | multipart `file=...` | JSON `{registers:[]}`            |

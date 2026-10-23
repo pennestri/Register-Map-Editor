@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Register map settings — Register Map Editor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>Register map settings</h1>
+    <p class="sub">
+      How the editor builds registers: address stepping, default width, which
+      standard fields appear, and the custom fields added to every register.
+      Changes save as you go — the editor picks them up the next time it loads.
+      <a class="navlink inline" href="{{ url_for('index') }}">← Back to editor</a>
+    </p>
+  </header>
+
+  <div class="settings settings-page">
+    <div class="settings-body">
+      <label>Address increment
+        <input type="text" id="setting-addr-inc" placeholder="0x4" spellcheck="false">
+        <small>Applied to the default address of each newly added register (previous register&apos;s address + this value). Hex (<code>0x4</code>) or decimal.</small>
+      </label>
+      <label>Default data size (bits)
+        <input type="number" id="setting-default-width" min="1" max="1024" step="1">
+        <small>Used as the default width for newly added registers.</small>
+      </label>
+      <fieldset class="settings-fields">
+        <legend>Default fields shown per register</legend>
+        <label class="check"><input type="checkbox" data-setting-field="address" checked> Address</label>
+        <label class="check"><input type="checkbox" data-setting-field="width" checked> Width</label>
+        <label class="check"><input type="checkbox" data-setting-field="access" checked> Access</label>
+        <label class="check"><input type="checkbox" data-setting-field="description" checked> Description</label>
+        <label class="check"><input type="checkbox" data-setting-field="reset_value" checked> Reset value</label>
+        <small>Uncheck to hide a field on every register card (and drop it from the exported YAML).</small>
+      </fieldset>
+      <fieldset class="settings-cf">
+        <legend>Custom fields</legend>
+        <div class="settings-cf-list" id="settings-cf-list"></div>
+        <div class="settings-cf-add">
+          <input type="text" id="new-cf-key" placeholder="field name" spellcheck="false" autocomplete="off">
+          <select id="new-cf-type" title="Field type">
+            <option value="string">string</option>
+            <option value="integer">integer</option>
+            <option value="float">float</option>
+            <option value="select">select (drop-down)</option>
+            <option value="boolean">boolean</option>
+          </select>
+          <input type="text" id="new-cf-options" placeholder="option a, option b" spellcheck="false" autocomplete="off" hidden>
+          <input type="text" id="new-cf-default" placeholder="default value" spellcheck="false" autocomplete="off">
+          <button type="button" id="add-cf" class="primary small">+ Add</button>
+        </div>
+        <small>Keys must be valid identifiers (letters, digits, underscore). Defaults are applied to every register. Removing a field deletes its key from every register. <strong>Type</strong> controls the input shown on each register and how the value is emitted in YAML: <em>string</em> is free text, <em>integer</em> accepts decimal or <code>0x</code> notation, <em>float</em> accepts decimals, <em>select</em> renders a drop-down limited to the options you list (comma separated), and <em>boolean</em> renders a checkbox that emits <code>true</code>/<code>false</code>.</small>
+      </fieldset>
+      <button type="button" id="settings-reset" class="ghost small">Reset settings to defaults</button>
+    </div>
+  </div>
+
+  <p id="status" class="status" hidden></p>
+
+  <script src="{{ url_for('static', filename='core.js') }}"></script>
+  <script src="{{ url_for('static', filename='settings.js') }}"></script>
+</body>
+</html>

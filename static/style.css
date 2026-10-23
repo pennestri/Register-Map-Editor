@@ -59,6 +59,35 @@ header .sub {
   border-radius: 10px;
   padding: 0 16px;
 }
+/* Standalone settings page: no <details>/<summary>, so open it up. */
+.settings-page {
+  margin-bottom: 28px;
+  padding-bottom: 4px;
+}
+.settings-page .settings-body { padding-top: 16px; }
+
+/* Links that read as buttons (cross-page navigation). */
+.navlink {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.navlink:hover { background: #252b3c; border-color: var(--accent); }
+.navlink.inline {
+  display: inline;
+  margin-left: 6px;
+  padding: 3px 9px;
+  font-size: 12px;
+}
 .settings > summary {
   cursor: pointer;
   font-weight: 600;

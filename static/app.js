@@ -1,154 +1,20 @@
-// Register Map editor — state-driven, no framework.
+// Register Map editor — editor page (/).
 //
-// State shape:
-//   {
-//     settings: {
-//       addressIncrement: "0x4" | "4" | ...   // hex or decimal, displayed as typed
-//       defaultWidth: 32,                     // bits
-//       enabledFields: Set<"address"|"width"|"access"|"description"|"reset_value">
-//       customFields: [ { key, type, default, options } ]   // see CUSTOM_FIELD_TYPES
-//     },
-//     registers: [ { address, mnemonic, width, access, description,
-//                    reset_value, bits: [ {position, name, width,
-//                    access, description, reset_value} ] } ]
-//   }
-
-const $ = (sel, root = document) => root.querySelector(sel);
+// Owns the register list, bit rows, and the toolbar (upload / export).
+// Custom fields defined on the settings page are rendered here per register.
+//
+// Expects core.js to be loaded first (it supplies the type helpers, `state`,
+// load/save of settings and `setStatus`).
 
 const ACCESS_VALUES = new Set(["r", "w", "rw", ""]);
-
-// ---- Settings -------------------------------------------------------------
-
-// Non-mnemonic register fields the user can toggle on the settings panel.
-const REGISTER_FIELDS = ["address", "width", "access", "description", "reset_value"];
 const MNEMONIC_KEY = "mnemonic";
-const SETTINGS_STORAGE_KEY = "register-map-editor:settings";
 
-// Top-level keys we treat as "standard" on a register. Anything outside this
-// set is a user-defined custom field and is preserved verbatim on export.
-const STANDARD_REGISTER_KEYS = new Set([
-  "address", "mnemonic", "width", "access", "description", "reset_value", "bits",
-]);
+const registerTpl = $("#register-tpl");
+const bitTpl = $("#bit-tpl");
 
-const CF_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-// Custom-field types. `string` is the default and stores values as raw
-// strings. `integer` / `float` parse to JS numbers and emit YAML scalars
-// unquoted; this is what gives `version: 1` vs `version: "1"`. `select`
-// renders a drop-down limited to a user-defined option list. `boolean`
-// renders a checkbox and emits a real YAML `true` / `false`.
-// Mirrors CUSTOM_FIELD_TYPES in app.py.
-const CUSTOM_FIELD_TYPES = ["string", "integer", "float", "select", "boolean"];
-
-// Types whose value control is a <select> rather than a free-text input.
-const SELECT_LIKE_TYPES = new Set(["select"]);
-
-// Words accepted as booleans, mirroring _coerce_typed_default() in app.py.
-const TRUE_WORDS = new Set(["true", "1", "yes", "y", "on"]);
-const FALSE_WORDS = new Set(["false", "0", "no", "n", "off"]);
-
-// Normalise a raw options list (array, or a comma/newline separated string
-// as typed in the settings UI) into a de-duplicated array of strings.
-// Returns [] for anything that isn't an array or string.
-function parseOptions(raw) {
-  let list;
-  if (Array.isArray(raw)) list = raw;
-  else if (typeof raw === "string") list = raw.split(/[,\n;]/);
-  else return [];
-  const out = [];
-  for (const item of list) {
-    const s = String(item).trim();
-    if (s && !out.includes(s)) out.push(s);
-  }
-  return out;
-}
-
-// Render an options array back into the comma separated form the settings
-// text input edits.
-function formatOptions(options) {
-  return (Array.isArray(options) ? options : []).join(", ");
-}
-
-// Validate `raw` against `type`. Returns { ok, value } where `value` is the
-// typed result on success (number for integer/float, boolean for boolean,
-// string otherwise) or the original raw string when ok is false. Empty input
-// always succeeds with an empty string so the user can leave a field unset.
-// `opts.options` is the option list a `select` value is checked against.
-function parseTypedValue(raw, type, opts) {
-  const s = raw == null ? "" : String(raw);
-  if (s === "") return { ok: true, value: "" };
-  const t = type || "string";
-  if (t === "string") return { ok: true, value: s };
-  if (t === "integer") {
-    const t2 = s.trim();
-    if (!/^-?(0[xX][0-9a-fA-F]+|\d+)$/.test(t2)) return { ok: false, value: s };
-    return { ok: true, value: parseInt(t2, 0) };
-  }
-  if (t === "float") {
-    const n = Number(s.trim());
-    if (!Number.isFinite(n)) return { ok: false, value: s };
-    return { ok: true, value: n };
-  }
-  if (t === "boolean") {
-    const w = s.trim().toLowerCase();
-    if (TRUE_WORDS.has(w)) return { ok: true, value: true };
-    if (FALSE_WORDS.has(w)) return { ok: true, value: false };
-    return { ok: false, value: s };
-  }
-  if (t === "select") {
-    const options = (opts && opts.options) || [];
-    if (options.includes(s)) return { ok: true, value: s };
-    return { ok: false, value: s };
-  }
-  return { ok: true, value: s };
-}
-
-// Coerce a stored value to a display string. Booleans come back as
-// "true"/"false"; numbers as their natural string form ("42", "3.14");
-// strings as-is.
-function formatCustomValue(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "number" && !Number.isFinite(v)) return "";
-  return String(v);
-}
-
-// Read a stored value as a boolean. Returns true/false for anything
-// recognisable, or undefined when the value is unset or unparseable.
-function storedBool(v) {
-  if (v === true) return true;
-  if (v === false) return false;
-  const w = String(v == null ? "" : v).trim().toLowerCase();
-  if (w === "") return undefined;
-  if (TRUE_WORDS.has(w)) return true;
-  if (FALSE_WORDS.has(w)) return false;
-  return undefined;
-}
-
-// Pick a sensible inputmode hint so mobile keyboards match the type.
-function inputmodeForType(type) {
-  if (type === "integer") return "numeric";
-  if (type === "float") return "decimal";
-  return "text";
-}
-
-// Placeholder for the settings "default value" input of a given type.
-function defaultPlaceholder(type) {
-  if (type === "integer") return "0 or 0x10";
-  if (type === "float") return "0.0";
-  if (type === "boolean") return "true / false";
-  if (type === "select") return "default option";
-  return "value";
-}
-
-function defaultSettings() {
-  return {
-    addressIncrement: "0x4",
-    defaultWidth: 32,
-    enabledFields: new Set(REGISTER_FIELDS),
-    customFields: [], // [{ key, type, default, options }]
-  };
-}
+// ---------------------------------------------------------------------------
+// Address helpers
+// ---------------------------------------------------------------------------
 
 // Parse a register-map address or increment: accepts "0xN" (hex) or "N" (dec).
 // Returns NaN on failure so callers can fall back to a default.
@@ -182,79 +48,6 @@ function getEffectiveDefaultWidth() {
   if (!Number.isFinite(n) || n < 1) return 32;
   return Math.min(1024, Math.max(1, Math.floor(n)));
 }
-
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data || typeof data !== "object") return null;
-    const base = defaultSettings();
-    const enabled = Array.isArray(data.enabledFields)
-      ? data.enabledFields.filter((k) => REGISTER_FIELDS.includes(k))
-      : [...base.enabledFields];
-    const customFields = Array.isArray(data.customFields)
-      ? data.customFields
-          .filter((cf) =>
-            cf && typeof cf === "object" &&
-            typeof cf.key === "string" && CF_KEY_RE.test(cf.key) &&
-            !STANDARD_REGISTER_KEYS.has(cf.key))
-          .map((cf) => {
-            const type = CUSTOM_FIELD_TYPES.includes(cf.type) ? cf.type : "string";
-            const options = parseOptions(cf.options);
-            // JSON has no integer/float/boolean types, so re-parse the stored
-            // default against the declared type instead of keeping it as the
-            // string JSON handed back.
-            const parsed = parseTypedValue(cf.default, type, { options });
-            return {
-              key: cf.key,
-              type,
-              default: parsed.ok ? parsed.value
-                                 : (type === "string" ? formatCustomValue(cf.default) : ""),
-              options,
-            };
-          })
-      : [];
-    return {
-      addressIncrement: typeof data.addressIncrement === "string"
-        ? data.addressIncrement
-        : base.addressIncrement,
-      defaultWidth: Number.isFinite(Number(data.defaultWidth))
-        ? Number(data.defaultWidth)
-        : base.defaultWidth,
-      enabledFields: new Set(enabled),
-      customFields,
-    };
-  } catch (e) {
-    return null;
-  }
-}
-
-function saveSettings() {
-  try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
-      addressIncrement: state.settings.addressIncrement,
-      defaultWidth: state.settings.defaultWidth,
-      enabledFields: [...state.settings.enabledFields],
-      customFields: state.settings.customFields.map((cf) => {
-        const type = cf.type || "string";
-        const entry = { key: cf.key, type, default: cf.default };
-        if (SELECT_LIKE_TYPES.has(type)) entry.options = parseOptions(cf.options);
-        return entry;
-      }),
-    }));
-  } catch (e) { /* localStorage disabled or quota exceeded */ }
-}
-
-// ---- State ----------------------------------------------------------------
-
-const state = {
-  settings: defaultSettings(),
-  registers: [],
-};
-
-const registerTpl = $("#register-tpl");
-const bitTpl = $("#bit-tpl");
 
 // ---------------------------------------------------------------------------
 // State helpers
@@ -615,13 +408,6 @@ function coerce(input, key) {
 // Toolbar actions
 // ---------------------------------------------------------------------------
 
-function setStatus(text, kind = "") {
-  const el = $("#status");
-  el.hidden = false;
-  el.textContent = text;
-  el.className = "status" + (kind ? " " + kind : "");
-}
-
 function addRegister() {
   state.registers.push(newRegister());
   render();
@@ -674,7 +460,8 @@ async function uploadYaml(file) {
     state.registers = regs;
     // Apply settings from the file if it carried any. A missing / null
     // `settings` field means the file is older or hand-written: leave the
-    // editor's current settings untouched.
+    // editor's current settings untouched. They are persisted so the
+    // settings page shows what the file carried.
     let settingsApplied = false;
     if (data.settings && typeof data.settings === "object" && Object.keys(data.settings).length > 0) {
       settingsApplied = applyImportedSettings(data.settings);
@@ -720,299 +507,6 @@ function normalizeBit(b) {
     description: b.description ?? "",
     reset_value: b.reset_value ?? "",
   };
-}
-
-// ---- Settings: custom fields sub-section -------------------------------
-
-function renderSettingsCustomFields() {
-  const list = $("#settings-cf-list");
-  if (!list) return;
-  list.innerHTML = "";
-  const cfs = state.settings.customFields;
-  if (cfs.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-mini";
-    empty.textContent = "No custom fields defined. Add one below to make it appear on every register.";
-    list.appendChild(empty);
-    return;
-  }
-  for (const cf of cfs) list.appendChild(renderSettingsCustomFieldRow(cf));
-}
-
-function renderSettingsCustomFieldRow(cf) {
-  const row = document.createElement("div");
-  row.className = "settings-cf-row";
-
-  const keyInput = document.createElement("input");
-  keyInput.type = "text";
-  keyInput.value = cf.key;
-  keyInput.placeholder = "field name";
-  keyInput.spellcheck = false;
-  keyInput.autocomplete = "off";
-  keyInput.addEventListener("input", () => {
-    const newKey = keyInput.value.trim();
-    if (!newKey || !CF_KEY_RE.test(newKey)) return; // ignore intermediate invalid
-    if (newKey === cf.key) return;
-    if (state.settings.customFields.some((x) => x !== cf && x.key === newKey)) {
-      setStatus(`Custom field '${newKey}' is already defined.`, "warn");
-      return;
-    }
-    const oldKey = cf.key;
-    cf.key = newKey;
-    for (const r of state.registers) {
-      if (oldKey in r) {
-        r[newKey] = r[oldKey];
-        delete r[oldKey];
-      }
-    }
-    saveSettings();
-    renderSettingsCustomFields();
-    render();
-  });
-  row.appendChild(keyInput);
-
-  const typeSelect = document.createElement("select");
-  typeSelect.title = "Field type";
-  for (const t of CUSTOM_FIELD_TYPES) {
-    const opt = document.createElement("option");
-    opt.value = t;
-    opt.textContent = t;
-    if (t === (cf.type || "string")) opt.selected = true;
-    typeSelect.appendChild(opt);
-  }
-  typeSelect.addEventListener("change", () => {
-    const newType = typeSelect.value;
-    cf.type = newType;
-    // Keep an option list around so switching back to select isn't a
-    // re-typing exercise; it is only exported while type === "select".
-    if (newType === "select" && parseOptions(cf.options).length === 0) {
-      cf.options = cf.default ? [String(cf.default)] : [];
-    }
-    // Re-validate the existing default against the new type.
-    const parsed = parseTypedValue(cf.default, newType, { options: cf.options });
-    if (parsed.ok) {
-      cf.default = parsed.value;
-    } else {
-      cf.default = "";
-      setStatus(`Default value for "${cf.key}" is invalid for type ${newType}; cleared.`, "warn");
-    }
-    if (newType === "select" && parseOptions(cf.options).length === 0) {
-      setStatus(`"${cf.key}" needs at least one option before a value can be set.`, "warn");
-    }
-    saveSettings();
-    renderSettingsCustomFields();
-    render();
-  });
-  row.appendChild(typeSelect);
-
-  // Option list — only rendered for select fields; every other type lets the
-  // default control stretch across the options column instead.
-  const type = cf.type || "string";
-  const isSelect = SELECT_LIKE_TYPES.has(type);
-  if (isSelect) {
-    const optInput = document.createElement("input");
-    optInput.type = "text";
-    optInput.className = "cf-options";
-    optInput.value = formatOptions(cf.options);
-    optInput.placeholder = "option a, option b";
-    optInput.title = "Comma separated list of allowed values";
-    optInput.spellcheck = false;
-    optInput.autocomplete = "off";
-    optInput.addEventListener("input", () => {
-      const opts = parseOptions(optInput.value);
-      cf.options = opts;
-      // A default outside the new list can no longer be selected; flag it
-      // instead of silently dropping the value.
-      if (cf.default !== "" && !opts.includes(cf.default)) {
-        optInput.classList.add("input-error");
-        optInput.title = `Default "${formatCustomValue(cf.default)}" is not one of the options`;
-      } else {
-        optInput.classList.remove("input-error");
-        optInput.title = "";
-      }
-      saveSettings();
-      render(); // refresh the drop-downs on every register card
-    });
-    row.appendChild(optInput);
-  }
-  row.appendChild(buildSettingsDefaultControl(cf, !isSelect));
-
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "danger";
-  remove.title = "Remove this field from every register";
-  remove.textContent = "×";
-  remove.addEventListener("click", () => {
-    const idx = state.settings.customFields.indexOf(cf);
-    if (idx < 0) return;
-    if (!confirm(`Remove custom field "${cf.key}" from every register?`)) return;
-    state.settings.customFields.splice(idx, 1);
-    saveSettings();
-    for (const r of state.registers) delete r[cf.key];
-    renderSettingsCustomFields();
-    render();
-  });
-  row.appendChild(remove);
-
-  return row;
-}
-
-// The "default value" cell of a settings custom-field row. Free-text for
-// string/integer/float, a fixed three-way select for boolean, and a select
-// over the configured options for select fields. `spanTwo` stretches the
-// control over the options column when the row has no options editor.
-function buildSettingsDefaultControl(cf, spanTwo) {
-  const type = cf.type || "string";
-
-  if (type === "boolean") {
-    const sel = document.createElement("select");
-    sel.className = "cf-default" + (spanTwo ? " span2" : "");
-    sel.title = "Default value for newly added registers";
-    for (const pair of [["", "— not set —"], ["true", "true"], ["false", "false"]]) {
-      const o = document.createElement("option");
-      o.value = pair[0];
-      o.textContent = pair[1];
-      sel.appendChild(o);
-    }
-    const cur = storedBool(cf.default);
-    sel.value = cur === undefined ? "" : String(cur);
-    sel.addEventListener("change", () => {
-      const b = storedBool(sel.value);
-      cf.default = b === undefined ? "" : b;
-      saveSettings();
-    });
-    return sel;
-  }
-
-  if (SELECT_LIKE_TYPES.has(type)) {
-    const sel = document.createElement("select");
-    sel.className = "cf-default";
-    sel.title = "Default value for newly added registers";
-    fillSelectOptions(sel, parseOptions(cf.options), cf.default);
-    sel.addEventListener("change", () => {
-      const parsed = parseTypedValue(sel.value, "select", { options: cf.options });
-      cf.default = parsed.ok ? parsed.value : "";
-      saveSettings();
-    });
-    return sel;
-  }
-
-  const defInput = document.createElement("input");
-  defInput.type = "text";
-  defInput.className = "cf-default" + (spanTwo ? " span2" : "");
-  defInput.value = formatCustomValue(cf.default);
-  defInput.placeholder = defaultPlaceholder(type);
-  defInput.inputMode = inputmodeForType(type);
-  defInput.spellcheck = false;
-  defInput.autocomplete = "off";
-  defInput.addEventListener("input", () => {
-    const parsed = parseTypedValue(defInput.value, type, { options: cf.options });
-    if (!parsed.ok) {
-      defInput.classList.add("input-error");
-      defInput.title = `Not a valid ${type}`;
-      return;
-    }
-    defInput.classList.remove("input-error");
-    defInput.title = "";
-    cf.default = parsed.value;
-    // Default applies to NEW registers only; existing values are preserved.
-    saveSettings();
-  });
-  return defInput;
-}
-
-// Trigger re-sync of settings inputs (address increment, default width,
-// field toggles, custom-fields list) from `state.settings`. Safe to call
-// from anywhere; looks the inputs up in the DOM each invocation.
-function syncSettingsUI() {
-  const addrIncInput = $("#setting-addr-inc");
-  const defaultWidthInput = $("#setting-default-width");
-  const fieldCheckboxes = document.querySelectorAll("[data-setting-field]");
-  if (addrIncInput) addrIncInput.value = state.settings.addressIncrement;
-  if (defaultWidthInput) defaultWidthInput.value = state.settings.defaultWidth;
-  fieldCheckboxes.forEach((cb) => {
-    cb.checked = state.settings.enabledFields.has(cb.dataset.settingField);
-  });
-  renderSettingsCustomFields();
-}
-
-// Settings round-trip: serialize the current settings panel state to the
-// shape written under register_map.settings in the YAML, and apply a
-// settings object received from /upload back into the editor.
-function projectSettings() {
-  return {
-    address_increment: state.settings.addressIncrement,
-    default_width: state.settings.defaultWidth,
-    enabled_fields: [...state.settings.enabledFields],
-    custom_fields: state.settings.customFields.map((cf) => {
-      const type = cf.type || "string";
-      const entry = { key: cf.key, type, default: cf.default };
-      // Options only matter for select fields; keeping the YAML tight.
-      if (SELECT_LIKE_TYPES.has(type)) entry.options = parseOptions(cf.options);
-      return entry;
-    }),
-  };
-}
-
-function applyImportedSettings(s) {
-  if (!s || typeof s !== "object") return false;
-  const base = defaultSettings();
-  const newSettings = {
-    addressIncrement: (() => {
-      const inc = s.address_increment;
-      if (typeof inc === "string" && inc.trim()) return inc.trim();
-      if (typeof inc === "number" && Number.isFinite(inc)) return String(Math.trunc(inc));
-      return base.addressIncrement;
-    })(),
-    defaultWidth: Number.isFinite(Number(s.default_width))
-      ? Math.min(1024, Math.max(1, Math.floor(Number(s.default_width))))
-      : base.defaultWidth,
-    enabledFields: (() => {
-      if (!Array.isArray(s.enabled_fields)) return new Set(base.enabledFields);
-      if (s.enabled_fields.length === 0) return new Set(); // explicit "hide all"
-      const filtered = s.enabled_fields.filter((k) => REGISTER_FIELDS.includes(k));
-      // All entries were bogus — ignore and fall back to defaults.
-      return new Set(filtered.length > 0 ? filtered : base.enabledFields);
-    })(),
-    customFields: (Array.isArray(s.custom_fields) ? s.custom_fields : [])
-      .filter((cf) =>
-        cf && typeof cf === "object" &&
-        typeof cf.key === "string" && CF_KEY_RE.test(cf.key) &&
-        !STANDARD_REGISTER_KEYS.has(cf.key))
-      .map((cf) => {
-        const type = CUSTOM_FIELD_TYPES.includes(cf.type) ? cf.type : "string";
-        // Re-coerce the default against the declared type so the in-memory
-        // state matches what the YAML actually said.
-        const raw = cf.default == null ? "" : (typeof cf.default === "string"
-          ? cf.default
-          : formatCustomValue(cf.default));
-        const options = parseOptions(cf.options);
-        const parsed = parseTypedValue(raw, type, { options });
-        return {
-          key: cf.key,
-          type,
-          default: parsed.ok ? parsed.value : (type === "string" ? raw : ""),
-          options,
-        };
-      }),
-  };
-  state.settings = newSettings;
-
-  // For every existing register: if it lacks one of the imported custom
-  // fields, populate it with the imported default. Existing values are
-  // preserved (we don't overwrite user-edited data on the round trip).
-  const importedDefaults = new Map(
-    newSettings.customFields.map((cf) => [cf.key, cf.default ?? ""])
-  );
-  for (const r of state.registers) {
-    for (const [k, def] of importedDefaults) {
-      if (!(k in r)) r[k] = def;
-    }
-  }
-
-  saveSettings();
-  syncSettingsUI(); // refresh the panels to reflect the new state.
-  return true;
 }
 
 // Export projection: drop register fields the user has hidden in the
@@ -1069,151 +563,6 @@ function triggerDownload(blob, filename) {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
-  // ---- Settings panel wiring -------------------------------------------
-  // Restore persisted settings (must happen before the first newRegister()
-  // call so the seed register honours them).
-  const restored = loadSettings();
-  if (restored) state.settings = restored;
-
-  const addrIncInput = $("#setting-addr-inc");
-  const defaultWidthInput = $("#setting-default-width");
-  const fieldCheckboxes = document.querySelectorAll("[data-setting-field]");
-  const cfList = $("#settings-cf-list");
-  const newCfKey = $("#new-cf-key");
-  const newCfType = $("#new-cf-type");
-  const newCfOptions = $("#new-cf-options");
-  const newCfDefault = $("#new-cf-default");
-
-  // syncSettingsUI is hoisted at the top level so applyImportedSettings
-  // (also top-level) can call it after a YAML upload.
-  syncSettingsUI();
-
-  addrIncInput.addEventListener("input", () => {
-    state.settings.addressIncrement = addrIncInput.value;
-    saveSettings();
-  });
-
-  defaultWidthInput.addEventListener("input", () => {
-    const n = Number(defaultWidthInput.value);
-    state.settings.defaultWidth =
-      Number.isFinite(n) && n >= 1 ? Math.min(1024, Math.floor(n)) : 32;
-    saveSettings();
-  });
-
-  fieldCheckboxes.forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const key = cb.dataset.settingField;
-      if (cb.checked) state.settings.enabledFields.add(key);
-      else state.settings.enabledFields.delete(key);
-      saveSettings();
-      render(); // re-render so existing register cards reflect the toggle
-    });
-  });
-
-  $("#settings-reset").addEventListener("click", () => {
-    if (!confirm("Reset register-map settings to defaults?")) return;
-    // Drop any keys from every register that the previous settings had
-    // defined as custom fields, so the editor matches the default schema.
-    const previousKeys = new Set(
-      state.settings.customFields.map((cf) => cf.key).filter(Boolean)
-    );
-    state.settings = defaultSettings();
-    if (previousKeys.size > 0) {
-      for (const r of state.registers) {
-        for (const k of previousKeys) delete r[k];
-      }
-    }
-    syncSettingsUI();
-    saveSettings();
-    render();
-  });
-
-  // ---- Custom-fields sub-section -----------------------------------------
-  const newCfTypeNow = () =>
-    CUSTOM_FIELD_TYPES.includes(newCfType.value) ? newCfType.value : "string";
-
-  // Keep the add-form in step with the picked type: the options box only
-  // exists for select fields, and the default input's hint changes.
-  function syncNewCfForm() {
-    const t = newCfTypeNow();
-    const isSelect = SELECT_LIKE_TYPES.has(t);
-    newCfOptions.hidden = !isSelect;
-    newCfDefault.placeholder = defaultPlaceholder(t);
-    newCfDefault.inputMode = inputmodeForType(t);
-    newCfDefault.classList.remove("input-error");
-    newCfOptions.classList.remove("input-error");
-  }
-  syncNewCfForm();
-
-  const validateNewCfDefault = () => {
-    const t = newCfTypeNow();
-    const options = parseOptions(newCfOptions.value);
-    const parsed = parseTypedValue(newCfDefault.value, t, { options });
-    newCfDefault.classList.toggle("input-error",
-      !parsed.ok && newCfDefault.value !== "");
-    newCfOptions.classList.toggle("input-error",
-      SELECT_LIKE_TYPES.has(t) && options.length === 0);
-    return parsed;
-  };
-
-  $("#add-cf").addEventListener("click", () => {
-    const key = newCfKey.value.trim();
-    const type = newCfTypeNow();
-    const isSelect = SELECT_LIKE_TYPES.has(type);
-    const options = isSelect ? parseOptions(newCfOptions.value) : [];
-    const defRaw = newCfDefault.value;
-    if (!key) { setStatus("Custom field name is required.", "warn"); newCfKey.focus(); return; }
-    if (!CF_KEY_RE.test(key)) {
-      setStatus("Field name must be a valid identifier (letters, digits, underscore).", "warn");
-      newCfKey.focus();
-      return;
-    }
-    if (STANDARD_REGISTER_KEYS.has(key)) {
-      setStatus(`'${key}' is a reserved name (use a different key).`, "warn");
-      newCfKey.focus();
-      return;
-    }
-    if (state.settings.customFields.some((cf) => cf.key === key)) {
-      setStatus(`Custom field '${key}' is already defined.`, "warn");
-      newCfKey.focus();
-      return;
-    }
-    if (isSelect && options.length === 0) {
-      setStatus("A select field needs at least one option.", "warn");
-      newCfOptions.focus();
-      return;
-    }
-    const parsed = parseTypedValue(defRaw, type, { options });
-    if (!parsed.ok) {
-      setStatus(isSelect
-        ? `Default value must be one of: ${options.join(", ")}`
-        : `Default value is not a valid ${type}.`, "warn");
-      newCfDefault.focus();
-      return;
-    }
-    state.settings.customFields.push({ key, type, default: parsed.value, options });
-    saveSettings();
-    for (const r of state.registers) {
-      if (!(key in r)) r[key] = parsed.value;
-    }
-    newCfKey.value = "";
-    newCfOptions.value = "";
-    newCfDefault.value = "";
-    syncNewCfForm();
-    renderSettingsCustomFields();
-    render();
-  });
-  // Live-validate the Add-form's default value as the user changes type.
-  newCfType.addEventListener("change", () => {
-    syncNewCfForm();
-    validateNewCfDefault();
-  });
-  newCfDefault.addEventListener("input", validateNewCfDefault);
-  newCfOptions.addEventListener("input", validateNewCfDefault);
-  newCfKey.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#add-cf").click(); } });
-  newCfDefault.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#add-cf").click(); } });
-
-  // ---- Toolbar wiring ---------------------------------------------------
   $("#add-register").addEventListener("click", addRegister);
   $("#clear-all").addEventListener("click", clearAll);
   $("#generate").addEventListener("click", downloadYaml);
@@ -1222,6 +571,27 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadYaml(file);
     e.target.value = ""; // allow re-uploading the same file
   });
+
+  // Registers only ever live in this tab — there is no server-side document
+  // to save them into — so any navigation (including the hop to /settings)
+  // throws unsaved work away. Flag the tab dirty and ask before walking off.
+  const markDirty = () => { state.dirty = true; };
+  document.addEventListener("input", markDirty, true);
+  document.addEventListener("change", markDirty, true);
+  document.addEventListener("click", (e) => {
+    if (e.target && e.target.closest && e.target.closest("[data-action]")) markDirty();
+  }, true);
+
+  const settingsLink = $("#nav-settings");
+  if (settingsLink) {
+    settingsLink.addEventListener("click", (e) => {
+      if (!state.dirty) return;
+      const go = confirm(
+        "Registers live only in this tab and are not saved yet.\n\n" +
+        "Leave for settings anyway? Download the YAML first if you want to keep this work.");
+      if (!go) e.preventDefault();
+    });
+  }
 
   // Seed with one register so the page isn't empty on first load.
   state.registers = [newRegister({ mnemonic: "CTRL" })];
