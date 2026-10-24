@@ -8,6 +8,12 @@ __pycache__/
 .venv/
 uv.lock
 
+# Django
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+.django-secret-key
+
 # Editors / OS
 .vscode/
 .idea/

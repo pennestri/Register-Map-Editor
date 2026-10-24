@@ -1,12 +1,16 @@
-"""
-Register Map editor — a small Flask app.
+"""YAML import/export for register maps.
 
-- Add/remove registers in the browser.
-- Each register: address, mnemonic, width, access (r/w/rw), description.
-- Each register can contain any number of bit rows: position, name, width,
-  access, description.
-- POST /generate  -> returns register_map.yaml
-- POST /upload    -> accepts a YAML file, returns its register list as JSON
+This is a direct port of the coercion logic the original Flask app used, so
+files written by either version stay interchangeable. The rules:
+
+* Every register is a mapping of standard keys (address, mnemonic, width,
+  access, description, reset_value) plus any number of user-defined custom
+  fields, plus an optional ``bits`` list.
+* Custom fields are described in the settings block by key + type. Types are
+  ``string``, ``integer``, ``float``, ``select`` (a drop-down with an option
+  list) and ``boolean``.
+* Import is tolerant: a bare list of registers, a top-level ``registers:``
+  key and ``register_map: registers:`` are all accepted.
 """
 
 from __future__ import annotations
@@ -16,10 +20,6 @@ import re
 from typing import Any
 
 import yaml
-from flask import Flask, jsonify, render_template, request, send_file
-
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024  # 4 MB upload cap
 
 # Standard register keys (these are reserved; user-defined "custom fields"
 # can't collide with them). Mirrors STANDARD_REGISTER_KEYS on the JS side.
@@ -33,49 +33,52 @@ TOGGLEABLE_REGISTER_FIELDS: tuple[str, ...] = (
     "address", "width", "access", "description", "reset_value",
 )
 
-CUSTOM_FIELD_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-# Mirrors CUSTOM_FIELD_TYPES on the JS side.
 CUSTOM_FIELD_TYPES: frozenset[str] = frozenset(
     {"string", "integer", "float", "select", "boolean"}
 )
+
+CUSTOM_FIELD_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Words accepted as booleans in a custom-field default. Mirrors TRUE_WORDS /
 # FALSE_WORDS on the JS side.
 TRUE_WORDS: frozenset[str] = frozenset({"true", "1", "yes", "y", "on"})
 FALSE_WORDS: frozenset[str] = frozenset({"false", "0", "no", "n", "off"})
 
+
+class YamlError(ValueError):
+    """Raised when an uploaded file cannot be understood."""
+
+
 # ---------------------------------------------------------------------------
-# YAML helpers
+# Coercion helpers
 # ---------------------------------------------------------------------------
 
-def _extract_registers(data: Any) -> list[dict] | None:
-    """Pull a list of register dicts out of a parsed YAML document.
+def _as_scalar(value: Any) -> Any:
+    """Try to keep numbers as ints, but pass strings (e.g. '0x10') through."""
+    if isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return value
+        # Try plain integer first.
+        try:
+            return int(s, 0)  # '0x..', '0o..', '0b..' and decimal all work
+        except ValueError:
+            return value
+    return value
 
-    Accepts any of these shapes (the editor exports the first):
-      register_map:
-        registers: [ ... ]
-      register_map: [ ... ]
-      registers:    [ ... ]
-      [ ... ]                       (bare list)
-    """
-    if isinstance(data, list):
-        return [r for r in data if isinstance(r, dict)]
 
-    if not isinstance(data, dict):
-        return None
-
-    if "register_map" in data:
-        rm = data["register_map"]
-        if isinstance(rm, dict) and isinstance(rm.get("registers"), list):
-            return rm["registers"]
-        if isinstance(rm, list):
-            return rm
-
-    if isinstance(data.get("registers"), list):
-        return data["registers"]
-
-    return None
+def _coerce_bit(bit: dict) -> dict:
+    out: dict[str, Any] = {}
+    for key in ("position", "name", "width", "access", "description",
+                "reset_value"):
+        if key in bit and bit[key] not in (None, ""):
+            if key == "reset_value":
+                out[key] = str(bit[key]).strip()
+            else:
+                out[key] = _as_scalar(bit[key])
+    return out
 
 
 def _coerce_register(reg: dict) -> dict:
@@ -112,19 +115,8 @@ def _coerce_register(reg: dict) -> dict:
     return out
 
 
-def _coerce_bit(bit: dict) -> dict:
-    out: dict[str, Any] = {}
-    for key in ("position", "name", "width", "access", "description",
-                "reset_value"):
-        if key in bit and bit[key] not in (None, ""):
-            if key == "reset_value":
-                out[key] = str(bit[key]).strip()
-            else:
-                out[key] = _as_scalar(bit[key])
-    return out
-
-
-def _coerce_typed_default(value: Any, ftype: str, options: list[str] | None = None) -> Any:
+def coerce_typed_default(value: Any, ftype: str,
+                         options: list[str] | None = None) -> Any:
     """Coerce a settings-payload default value to its declared field type.
 
     Mirrors parseTypedValue() on the JS side: strings stay strings, integer
@@ -134,8 +126,8 @@ def _coerce_typed_default(value: Any, ftype: str, options: list[str] | None = No
     default isn't invented. Anything that can't parse to the declared type
     falls back to unset ("").
 
-    `options` is the allowed value list of a `select` field; it is ignored by
-    every other type.
+    ``options`` is the allowed value list of a ``select`` field; it is ignored
+    by every other type.
     """
     if value is None or value == "":
         return ""
@@ -178,23 +170,7 @@ def _coerce_typed_default(value: Any, ftype: str, options: list[str] | None = No
     return value
 
 
-def _as_scalar(value: Any) -> Any:
-    """Try to keep numbers as ints, but pass strings (e.g. '0x10') through."""
-    if isinstance(value, (int, float, bool)):
-        return value
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return value
-        # Try plain integer first.
-        try:
-            return int(s, 0)  # '0x..', '0o..', '0b..' and decimal all work
-        except ValueError:
-            return value
-    return value
-
-
-def _coerce_options(raw: Any) -> list[str]:
+def coerce_options(raw: Any) -> list[str]:
     """Normalise a select field's option list.
 
     Accepts a list of scalars or a comma/newline separated string (how the
@@ -215,7 +191,7 @@ def _coerce_options(raw: Any) -> list[str]:
     return out
 
 
-def _coerce_settings(raw: Any) -> dict[str, Any]:
+def coerce_settings(raw: Any) -> dict[str, Any]:
     """Validate and normalise an editor settings dict.
 
     The settings panel state has four sub-keys:
@@ -253,7 +229,7 @@ def _coerce_settings(raw: Any) -> dict[str, Any]:
 
     cf = raw.get("custom_fields")
     if isinstance(cf, list):
-        cleaned = []
+        cleaned_fields = []
         for entry in cf:
             if not isinstance(entry, dict):
                 continue
@@ -264,48 +240,94 @@ def _coerce_settings(raw: Any) -> dict[str, Any]:
                 continue
             t = entry.get("type")
             ftype = t if isinstance(t, str) and t in CUSTOM_FIELD_TYPES else "string"
-            options = _coerce_options(entry.get("options"))
-            def_val = entry.get("default", "")
+            options = coerce_options(entry.get("options"))
             # Coerce the default against the declared type so a YAML with
             # `type: integer` + `default: 0x10` arrives at the JS side as
             # the int 16 (matches how the editor writes it).
-            coerced = _coerce_typed_default(def_val, ftype, options)
+            coerced = coerce_typed_default(entry.get("default", ""), ftype, options)
             field: dict[str, Any] = {"key": k, "type": ftype, "default": coerced}
             if ftype == "select":
                 field["options"] = options
-            cleaned.append(field)
-        if cleaned:
-            out["custom_fields"] = cleaned
+            cleaned_fields.append(field)
+        if cleaned_fields:
+            out["custom_fields"] = cleaned_fields
 
     return out
 
 
+def coerce_registers(raw: Any) -> list[dict]:
+    """Coerce a list of registers coming from the browser."""
+    if not isinstance(raw, list):
+        return []
+    return [_coerce_register(r) for r in raw if isinstance(r, dict)]
+
+
 # ---------------------------------------------------------------------------
-# Routes
+# Import
 # ---------------------------------------------------------------------------
 
-@app.route("/")
-def index() -> str:
-    return render_template("index.html")
+def extract_registers(data: Any) -> list[dict] | None:
+    """Pull a list of register dicts out of a parsed YAML document.
+
+    Accepts any of these shapes (the editor exports the first):
+      register_map:
+        registers: [ ... ]
+      register_map: [ ... ]
+      registers:    [ ... ]
+      [ ... ]                       (bare list)
+    """
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+
+    if not isinstance(data, dict):
+        return None
+
+    if "register_map" in data:
+        rm = data["register_map"]
+        if isinstance(rm, dict) and isinstance(rm.get("registers"), list):
+            return rm["registers"]
+        if isinstance(rm, list):
+            return rm
+
+    if isinstance(data.get("registers"), list):
+        return data["registers"]
+
+    return None
 
 
-@app.route("/settings")
-def settings() -> str:
-    """Register-map settings live on their own page; both pages share state
-    through localStorage (see static/core.js)."""
-    return render_template("settings.html")
+def parse_yaml(text: str | bytes) -> tuple[list[dict], dict]:
+    """Parse an uploaded YAML file into (registers, settings).
+
+    Raises YamlError with a human-readable message when the file can't be
+    understood.
+    """
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise YamlError(f"YAML parse error: {exc}") from exc
+
+    registers = extract_registers(data)
+    if registers is None:
+        raise YamlError(
+            "Could not find a register list in the YAML. Expected a list, a "
+            "'registers:' key, or a 'register_map: registers:' structure."
+        )
+
+    settings: dict = {}
+    if isinstance(data, dict):
+        rm = data.get("register_map")
+        if isinstance(rm, dict) and isinstance(rm.get("settings"), dict):
+            settings = coerce_settings(rm["settings"])
+
+    return registers, settings
 
 
-@app.route("/generate", methods=["POST"])
-def generate():
-    payload = request.get_json(silent=True) or {}
-    raw_registers = payload.get("registers") or []
-    if not isinstance(raw_registers, list):
-        return jsonify({"error": "registers must be a list"}), 400
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
 
-    registers = [_coerce_register(r) for r in raw_registers if isinstance(r, dict)]
-    settings = _coerce_settings(payload.get("settings"))
-
+def build_document(registers: list[dict], settings: dict) -> dict:
+    """Assemble the full YAML document for a register map."""
     register_map: dict[str, Any] = {
         "metadata": {
             "generator": "register-map-app",
@@ -315,73 +337,18 @@ def generate():
     if settings:
         register_map["settings"] = settings
     register_map["registers"] = registers
+    return {"register_map": register_map}
 
-    doc = {"register_map": register_map}
 
+def dump_yaml(registers: list[dict], settings: dict) -> str:
+    """Render a register map as YAML text."""
     buf = io.StringIO()
     yaml.safe_dump(
-        doc,
+        build_document(registers, settings),
         buf,
         sort_keys=False,
         default_flow_style=False,
         allow_unicode=True,
         width=100,
     )
-    payload = buf.getvalue().encode("utf-8")
-    out = io.BytesIO(payload)
-    out.seek(0)
-    return send_file(
-        out,
-        mimetype="text/yaml; charset=utf-8",
-        as_attachment=True,
-        download_name="register_map.yaml",
-    )
-
-
-@app.route("/upload", methods=["POST"])
-def upload():
-    file = request.files.get("file")
-    if file is None or not file.filename:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    try:
-        data = yaml.safe_load(file.read())
-    except yaml.YAMLError as exc:
-        return jsonify({"error": f"YAML parse error: {exc}"}), 400
-
-    registers = _extract_registers(data)
-    if registers is None:
-        return jsonify(
-            {"error": "Could not find a register list in the YAML. "
-                      "Expected a list, a 'registers:' key, or a "
-                      "'register_map: registers:' structure."}
-        ), 400
-
-    # Pull settings out of register_map.settings if present. Returned as None
-    # (not {}) so the client can distinguish "no settings in file" from
-    # "settings in file but every key invalid".
-    settings = None
-    if isinstance(data, dict):
-        rm = data.get("register_map")
-        if isinstance(rm, dict) and isinstance(rm.get("settings"), dict):
-            settings = _coerce_settings(rm["settings"]) or None
-
-    return jsonify({"registers": registers, "settings": settings})
-
-
-@app.errorhandler(413)
-def too_large(_exc):
-    return jsonify({"error": "File too large (max 4 MB)."}), 413
-
-
-def main() -> None:
-    """Entry point used by `python app.py` and the `register-map-editor` script."""
-    # Bind to localhost by default; override with HOST=0.0.0.0 if needed.
-    import os
-    host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "5000"))
-    app.run(host=host, port=port, debug=True)
-
-
-if __name__ == "__main__":
-    main()
+    return buf.getvalue()

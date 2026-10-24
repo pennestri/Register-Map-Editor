@@ -1,0 +1,27 @@
+{% extends "registermap/base.html" %}
+
+{% block title %}Import — {{ project.name }} — Register Map Editor{% endblock %}
+
+{% block header %}
+<h1>{{ project.name }}</h1>
+<p class="sub"><a class="navlink inline" href="{{ project.get_absolute_url }}">← Back to {{ project.name }}</a></p>
+{% endblock %}
+
+{% block content %}
+<section class="form-page">
+  <h2>Replace this register map with a YAML file</h2>
+  <p class="form-note">
+    The uploaded file replaces the {{ project.register_count }} register(s) currently in
+    “{{ project.name }}”. Settings that the file carries are adopted too; settings it
+    doesn't carry are left as they are.
+  </p>
+  <form method="post" enctype="multipart/form-data" class="stacked-form">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button type="submit" class="primary">Import</button>
+      <a class="navlink" href="{{ project.get_absolute_url }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -1,69 +1,39 @@
 # Register Map Editor
 
-A small Flask web app for editing hardware register maps and exporting them as
-YAML.
+A small local web app for editing hardware register maps and exporting them
+as YAML. Built with Django, runs on your own machine, no accounts and no
+external services.
 
 ## Features
 
-- Two pages:
-  - **`/`** — the register editor: the register list, bit rows, upload and
-    export.
-  - **`/settings`** — register-map settings, on its own page. Every change
-    saves to `localStorage` as you make it, so the editor picks it up the
-    next time it loads; there is no save button and no way to lose work by
-    navigating away.
-- Add as many registers as you like.
-- Per register: address, mnemonic, width, access (`r` / `w` / `rw`), description,
-  reset value.
-- Per register: any number of bit-field rows with `position`, `width`, `name`,
-  access and description (the bit's function).
-- **Register map settings** (its own page, `/settings`) lets you tune the editor
-  to match your register-map conventions:
-  - **Address increment** applied to the default address of each newly added
-    register (default `0x4`; hex `0x..` or decimal both accepted).
-  - **Default data size** used as the default width for newly added registers
-    (default `32` bits).
-  - **Default fields** checkboxes hide the corresponding input on every
-    register card; hidden fields are also dropped from the exported YAML.
-    Mnemonic is always shown because it's the register identifier.
-  - **Custom fields** lets you define additional keys (e.g. `vendor`,
-    `ip_version`) that are added to every register with a default value.
-    Each field has a **type** that decides which input the register shows
-    and how the value is emitted in YAML:
-    - `string` (default): free text, stored and emitted as a YAML string.
-    - `integer`: accepts decimal or `0x..` notation, emits unquoted (so the
-      YAML shows `version: 16`, not `version: "16"`).
-    - `float`: accepts decimals, emits unquoted (so the YAML shows
-      `ratio: 3.14`).
-    - `select`: renders a **drop-down** on every register. You supply the
-      available options as a comma separated list in the settings panel;
-      only those values can be picked, and the list is exported as
-      `options:`. A value that is no longer in the list (after you edited
-      the options) is kept and flagged as `(unknown)` rather than dropped.
-    - `boolean`: renders a **checkbox** on every register and emits a real
-      `true` / `false`. An unticked box stores `false`; use the row's `×`
-      button to leave the field unset so it is omitted from the export.
-    Custom fields appear in each register's *Custom fields* section as an
-    editable key/value row. The settings panel shows the same row with the
-    options editor and a type-appropriate default. Renaming a custom field
-    in settings renames it everywhere; removing a custom field deletes its
-    key from every register. Ad-hoc keys present in uploaded YAML (but not
-    defined here) are also preserved on the register and exported.
-  - **Settings round-trip**: every export writes the current settings under
-    `register_map.settings:` in the YAML. Uploading a file that carries
-    settings applies them to the editor (existing per-register values
-    survive; only registers missing a custom field get the imported default).
-    Files without a `settings:` block leave the editor's local settings
-    untouched.
-  - Settings persist in `localStorage` and can be restored with the
-    *Reset settings to defaults* button.
-- Registers live only in the browser tab — there is no server-side document
-  to save them into, so reloading or navigating to `/settings` discards
-  unsaved register edits (the editor asks before it sends you there).
-  Download the YAML first if you want to keep your work.
-- **Download YAML** generates `register_map.yaml` from the current form.
-- **Upload YAML** loads an existing register map back into the editor for
-  editing.
+- **Dashboard** at `/` — every register map you have saved, with its register
+  and bit count, when it was last touched, and actions to open, export,
+  duplicate, rename or delete it. Create a new project from scratch, or
+  import an existing YAML register map.
+- **Per-project settings.** A project is one register map *plus* the settings
+  it was written with: address increment, default data size, which standard
+  fields appear on a register card, and the custom-field definitions. Two
+  projects never share settings.
+- **Editor** at `/projects/<id>/` — the register list with bit rows, plus a
+  custom-field section per register.
+  - Address, mnemonic, width, access (`r` / `w` / `rw`), description, reset
+    value.
+  - Any number of bit-field rows per register: position, width, name, access
+    and description.
+  - **Custom fields** on every register: `string`, `integer`, `float`,
+    `select` (a drop-down limited to an option list you define) and
+    `boolean` (a checkbox that emits a real `true` / `false`).
+  - **Save** writes the map back to the project; **Download YAML** exports
+    exactly what is on screen, saved or not.
+  - **Upload YAML** replaces the project's registers with a file. Settings
+    the file carries are adopted; settings it doesn't carry are left alone.
+- **Settings page** at `/projects/<id>/settings/` — every change is written
+  back to the project as you make it.
+- **Download / import YAML** anywhere. The file format is stable: a file
+  exported by this tool can be imported again, and files written by earlier
+  versions still load.
+- No login. The app binds to `127.0.0.1` and has no accounts; whoever opens
+  it on the machine is the only user.
 
 ## Run
 
@@ -72,31 +42,28 @@ once (`curl -LsSf https://astral.sh/uv/install.sh | sh`), then from the repo
 root:
 
 ```bash
-# One-shot run (uv creates .venv and installs deps on first invocation)
-uv run python app.py
+# One-shot run: uv creates .venv and installs deps on first invocation
+uv run python manage.py migrate      # create the local database
+uv run python manage.py runserver
 # editor:  http://127.0.0.1:5000/
-# settings: http://127.0.0.1:5000/settings
 ```
 
-Other common entry points:
+Other entry points:
 
 ```bash
 uv sync                       # create .venv and install deps
-uv run app                    # same as `uv run python app.py`
-uv run register-map-editor    # via the console script defined in pyproject.toml
+uv run manage.py test         # run the test suite
+uv run register-map-editor    # console script: starts the local server
 ```
 
 Bind to all interfaces on a custom port with env vars:
 
 ```bash
-HOST=0.0.0.0 PORT=8080 uv run python app.py
+HOST=0.0.0.0 PORT=8080 uv run register-map-editor
 ```
 
-Pin the Python interpreter (optional — uv honours `.python-version`):
-
-```bash
-uv python install 3.12
-```
+`DJANGO_DEBUG=0` turns off debug mode and `DJANGO_SECRET_KEY=…` overrides the
+locally generated key.
 
 ### Without uv
 
@@ -106,27 +73,38 @@ If you prefer the standard tooling, the legacy workflow still works:
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-python app.py
+python manage.py migrate
+python manage.py runserver
 ```
+
+## Where the data lives
+
+Everything is in a local SQLite file, `db.sqlite3`, next to `manage.py`
+(gitignored). Each project is one row holding its registers and its settings
+as JSON. Deleting the file deletes your projects; export anything you want to
+keep. There is no server, no sync and no backup beyond that.
 
 ## Project layout
 
 ```
-app.py               Flask app: routes + YAML coercion
-templates/
-  index.html         editor page      (loads core.js + app.js)
-  settings.html      settings page    (loads core.js + settings.js)
-static/
-  core.js            shared: custom-field type system, state, localStorage
-  app.js             editor page: registers, bits, upload/export
-  settings.js        settings page: the settings panel
-  style.css
+manage.py                 Django entry point
+config/                   settings, root URLconf, WSGI/ASGI
+registermap/
+  models.py               the Project model (registers + settings)
+  yamlio.py               YAML import/export and type coercion
+  views.py                dashboard, editor, settings, save, export, import
+  forms.py                project create / rename / import forms
+  urls.py                 URL map
+  tests.py                test suite
+  migrations/
+  templates/registermap/  base template + dashboard / editor / settings / forms
+  static/registermap/     style.css, core.js, editor.js, settings.js
+examples/                 a sample register map
 ```
 
-`core.js` is loaded by both pages. Classic scripts share one global scope, so
-`state` and the type helpers are defined once and both pages write to the same
-`localStorage` key — that is how a field defined on `/settings` shows up on a
-register in `/`.
+`core.js` is loaded by both the editor and the settings page. Classic scripts
+share one global scope, so `state` and the type helpers are defined once. The
+project is embedded in the page as JSON and written back with `fetch()`.
 
 ## YAML format
 
@@ -137,7 +115,7 @@ register_map:
   metadata:
     generator: register-map-app
     version: "1.0"
-  settings:                       # editor settings; round-trippable
+  settings:                       # this project's settings; round-trippable
     address_increment: '0x4'      # hex or decimal string; default for new registers
     default_width: 32             # bits; default for new registers
     enabled_fields:               # which standard fields to show per register
@@ -152,7 +130,7 @@ register_map:
         default: acme
       - key: ip_version
         type: integer
-        default: "1.0"              # emitted as an unquoted integer in YAML
+        default: 16                 # emitted as an unquoted integer in YAML
       - key: mode
         type: select                # drop-down; only these values are allowed
         default: normal
@@ -173,7 +151,7 @@ register_map:
       # Any additional top-level keys are user-defined custom fields and
       # are preserved verbatim through the import/export round-trip.
       vendor: acme
-      ip_version: "1.0"
+      ip_version: 16
       mode: normal
       latched: true
       bits:
@@ -190,11 +168,35 @@ top-level `registers:` key, or a flat `register_map: [ ... ]` list.
 
 See `examples/sample_register_map.yaml` for a full example.
 
-## REST endpoints
+## Endpoints
 
-| Method | Path        | Body / form          | Returns                          |
-|--------|-------------|----------------------|----------------------------------|
-| GET    | `/`         | —                    | HTML editor page                 |
-| GET    | `/settings` | —                    | HTML settings page               |
-| POST   | `/generate` | JSON `{registers:[]}`| `register_map.yaml` (attachment) |
-| POST   | `/upload`   | multipart `file=...` | JSON `{registers:[]}`            |
+| Method | Path                              | Returns                        |
+|--------|-----------------------------------|--------------------------------|
+| GET    | `/`                               | dashboard                      |
+| POST   | `/projects/new/`                  | create a project               |
+| POST   | `/projects/import/`               | create a project from a YAML file |
+| GET    | `/projects/<id>/`                 | editor                         |
+| GET    | `/projects/<id>/settings/`        | settings page                  |
+| POST   | `/projects/<id>/save/`            | store the registers (JSON)     |
+| POST   | `/projects/<id>/settings/save/`   | store the settings (JSON)      |
+| GET    | `/projects/<id>/export/`          | YAML of the stored project     |
+| POST   | `/projects/<id>/export/`          | YAML of the registers sent in the request |
+| POST   | `/projects/<id>/import/`          | replace the project from a YAML file |
+| POST   | `/projects/<id>/duplicate/`       | copy the project               |
+| GET    | `/projects/<id>/edit/`            | rename the project             |
+| GET    | `/projects/<id>/delete/`          | delete the project             |
+
+## Tests
+
+```bash
+uv run manage.py test
+```
+
+The suite covers the YAML format (round-trips, the tolerant import shapes,
+type coercion for every custom-field type), the dashboard and project
+actions, the JSON save endpoints, per-project settings isolation, and that
+there is no login to get in the way.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

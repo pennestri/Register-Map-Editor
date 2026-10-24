@@ -1,0 +1,71 @@
+{% extends "registermap/base.html" %}
+
+{% block title %}Projects — Register Map Editor{% endblock %}
+
+{% block content %}
+<section class="dash">
+  <div class="dash-forms">
+    <form method="post" action="{% url 'registermap:create' %}" class="dash-card">
+      {% csrf_token %}
+      <h2>New project</h2>
+      <p class="dash-hint">A project is one register map. It keeps its own settings, so every
+        map you work on can have its own conventions.</p>
+      <div class="dash-row">
+        <input type="text" name="name" maxlength="120" placeholder="Project name, e.g. STM32 UART"
+               autocomplete="off" spellcheck="false" required>
+        <button type="submit" class="primary">Create</button>
+      </div>
+    </form>
+
+    <form method="post" action="{% url 'registermap:import_create' %}" enctype="multipart/form-data" class="dash-card">
+      {% csrf_token %}
+      <h2>Import a register map</h2>
+      <p class="dash-hint">Start from a YAML file exported by this tool.</p>
+      <div class="dash-row">
+        <input type="file" name="file" accept=".yaml,.yml,text/yaml,application/x-yaml" required>
+        <input type="text" name="name" maxlength="120" placeholder="Name (optional)"
+               autocomplete="off" spellcheck="false">
+        <button type="submit">Import</button>
+      </div>
+    </form>
+  </div>
+
+  <h2 class="dash-title">Saved projects</h2>
+  {% if projects %}
+  <table class="projects">
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th class="num">Registers</th>
+        <th class="num">Bits</th>
+        <th>Updated</th>
+        <th class="actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for project in projects %}
+      <tr>
+        <td class="name"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a></td>
+        <td class="num">{{ project.register_count }}</td>
+        <td class="num">{{ project.bit_count }}</td>
+        <td class="when"><time datetime="{{ project.updated_at|date:'c' }}">{{ project.updated_at|date:"Y-m-d H:i" }}</time></td>
+        <td class="actions">
+          <a class="pill" href="{{ project.get_absolute_url }}">Open</a>
+          <a class="pill" href="{{ project.get_settings_url }}">Settings</a>
+          <a class="pill" href="{% url 'registermap:export' project.pk %}">Export</a>
+          <form method="post" action="{% url 'registermap:duplicate' project.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="pill">Duplicate</button>
+          </form>
+          <a class="pill" href="{% url 'registermap:rename' project.pk %}">Rename</a>
+          <a class="pill danger" href="{% url 'registermap:delete' project.pk %}">Delete</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty-mini">No projects yet. Create one above, or import a YAML register map.</p>
+  {% endif %}
+</section>
+{% endblock %}

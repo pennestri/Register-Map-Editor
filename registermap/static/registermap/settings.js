@@ -1,14 +1,10 @@
-// Register Map editor — settings page (/settings).
+// Register Map editor — settings page.
 //
-// Everything that edits `state.settings`: the address increment, the default
-// width, the standard-field toggles and the custom-field definitions. Changes
-// are persisted to localStorage on every keystroke, so the editor page picks
-// them up the next time it loads — there is no explicit save step.
+// Owns the settings form: address increment, default width, the standard
+// field toggles and the custom-field definitions. Every change is written
+// back to the server (debounced) by saveSettings() in core.js.
 //
-// Expects core.js to be loaded first (it supplies the type helpers, `state`
-// and `setStatus`).
-
-// ---- Custom-fields sub-section -------------------------------------------
+// Expects core.js to be loaded first.
 
 function renderSettingsCustomFields() {
   const list = $("#settings-cf-list");
@@ -43,10 +39,7 @@ function renderSettingsCustomFieldRow(cf) {
       setStatus(`Custom field '${newKey}' is already defined.`, "warn");
       return;
     }
-    const oldKey = cf.key;
     cf.key = newKey;
-    // Registers live only in the editor page's memory, so renaming here can't
-    // rewrite them directly; the editor re-seeds from these definitions.
     saveSettings();
     renderSettingsCustomFields();
   });
@@ -220,8 +213,8 @@ function fillSettingsSelectOptions(select, options, current) {
   select.value = cur;
 }
 
-// Re-sync every settings input from `state.settings`. Called once on boot and
-// after any operation that replaces the settings wholesale (reset, import).
+// Re-sync every settings input from `state.settings`. Called once on boot
+// and after any operation that replaces the settings wholesale (reset).
 function syncSettingsUI() {
   const addrIncInput = $("#setting-addr-inc");
   const defaultWidthInput = $("#setting-default-width");

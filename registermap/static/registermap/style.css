@@ -39,10 +39,39 @@ header h1 {
   font-size: 22px;
   letter-spacing: 0.2px;
 }
+header h1 a.brand {
+  color: var(--text);
+  text-decoration: none;
+}
+header h1 a.brand:hover { color: var(--accent); }
 header .sub {
   margin: 0;
   color: var(--muted);
 }
+header .sub a { color: var(--muted); }
+header .sub a:hover { color: var(--text); }
+.dot-sep { color: var(--border); margin: 0 4px; }
+.save-state { font-size: 12px; color: var(--muted); }
+.save-state.dirty { color: var(--warn); }
+
+/* Flash messages */
+.messages {
+  margin: 14px 28px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.message {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+.message.success { color: #aef0c2; border-color: #2a5a3a; background: #14241a; }
+.message.error   { color: #ffc1c1; border-color: #6a2a2a; background: #2a1414; }
+.message.warning { color: #ffe1a8; border-color: #6a502a; background: #2a2014; }
 
 .toolbar {
   display: flex;
@@ -73,6 +102,181 @@ header .sub {
 }
 .settings-page .settings-body { padding-top: 16px; }
 
+/* ---- Dashboard --------------------------------------------------------- */
+.dash {
+  margin: 14px 28px 28px;
+  max-width: 1100px;
+}
+.dash-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
+.dash-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+}
+.dash-card h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+.dash-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.dash-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.dash-row input[type=text] {
+  flex: 1 1 180px;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+.dash-row input[type=text]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.dash-row input[type=file] {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dash-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.projects {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.projects th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+.projects td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.projects tr:last-child td { border-bottom: none; }
+.projects .num { text-align: right; color: var(--muted); font-family: var(--mono); }
+.projects .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.projects .name a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+.projects .name a:hover { color: var(--accent); }
+.projects .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.projects .actions form.inline { display: inline; }
+
+.pill {
+  display: inline-block;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.pill:hover { background: #252b3c; border-color: var(--accent); }
+.pill.danger { color: #ffc1c1; border-color: #6a2a2a; }
+.pill.danger:hover { background: #2a1414; border-color: var(--danger); }
+
+/* ---- Forms ------------------------------------------------------------- */
+.form-page {
+  margin: 20px 28px 40px;
+  max-width: 620px;
+}
+.form-page h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+.form-note {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.stacked-form p {
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stacked-form label { font-size: 12px; color: var(--muted); }
+.stacked-form input[type=text],
+.stacked-form input[type=file] {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.stacked-form input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.stacked-form .helptext {
+  font-size: 11px;
+  color: var(--muted);
+}
+.stacked-form ul.errorlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--danger);
+  font-size: 12px;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+}
+
 /* Links that read as buttons (cross-page navigation). */
 .navlink {
   display: inline-flex;
@@ -95,27 +299,6 @@ header .sub {
   padding: 3px 9px;
   font-size: 12px;
 }
-.settings > summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.2px;
-  list-style: none;
-  padding: 12px 0;
-  user-select: none;
-}
-.settings > summary::-webkit-details-marker { display: none; }
-.settings > summary::before {
-  content: "▸";
-  display: inline-block;
-  width: 14px;
-  color: var(--muted);
-  font-size: 11px;
-  margin-right: 6px;
-  transition: transform 0.12s;
-}
-.settings[open] > summary::before { content: "▾"; }
-
 .settings-body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

@@ -1,0 +1,17 @@
+{% extends "registermap/base.html" %}
+
+{% block title %}{{ title }} — Register Map Editor{% endblock %}
+
+{% block content %}
+<section class="form-page">
+  <h2>{{ title }}</h2>
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button type="submit" class="primary">{{ submit_label }}</button>
+      <a class="navlink" href="{{ cancel_url }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -1,10 +1,11 @@
-// Register Map editor — editor page (/).
+// Register Map editor — editor page.
 //
-// Owns the register list, bit rows, and the toolbar (upload / export).
-// Custom fields defined on the settings page are rendered here per register.
+// Owns the register list, the bit rows and the toolbar (save, upload,
+// export). The project's registers live on the server; this page edits a
+// local copy and writes it back when you press Save.
 //
 // Expects core.js to be loaded first (it supplies the type helpers, `state`,
-// load/save of settings and `setStatus`).
+// the server plumbing and the dirty-tracking).
 
 const ACCESS_VALUES = new Set(["r", "w", "rw", ""]);
 const MNEMONIC_KEY = "mnemonic";
@@ -420,93 +421,80 @@ function clearAll() {
   render();
 }
 
-async function downloadYaml() {
-  if (state.registers.length === 0) {
-    setStatus("Add at least one register before exporting.", "warn");
-    return;
-  }
-  const payload = {
-    registers: state.registers.map(projectForExport),
-    settings: projectSettings(),
-  };
+// Write the edited registers back to the server.
+async function saveProject() {
+  if (!state.project) return;
+  const btn = $("#save");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
   try {
-    const res = await fetch("/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const res = await apiPost(state.project.save_url, { registers: state.registers });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}`);
     }
-    const blob = await res.blob();
-    triggerDownload(blob, "register_map.yaml");
-    setStatus(`Exported ${state.registers.length} register(s) to register_map.yaml.`, "ok");
-  } catch (exc) {
-    setStatus("Export failed: " + exc.message, "err");
+    const data = await res.json();
+    markSaved();
+    setStatus(`Saved ${data.register_count} register(s).`, "ok");
+  } catch (err) {
+    setStatus("Save failed: " + err.message, "err");
+  } finally {
+    if (btn) { btn.textContent = "Save"; btn.disabled = !state.dirty; }
   }
 }
 
+// Download what is on screen, saved or not: the registers are projected the
+// same way the YAML export projects them, then handed to the server which
+// renders the YAML.
+async function downloadYaml() {
+  if (!state.project) return;
+  if (state.registers.length === 0) {
+    setStatus("Add at least one register before exporting.", "warn");
+    return;
+  }
+  const btn = $("#generate");
+  if (btn) { btn.disabled = true; btn.textContent = "Preparing…"; }
+  try {
+    const res = await apiPost(state.project.export_url, {
+      registers: state.registers.map(projectForExport),
+      settings: projectSettings(),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    triggerDownload(blob, yamlFilename());
+    setStatus(`Exported ${state.registers.length} register(s) to YAML.`, "ok");
+  } catch (err) {
+    setStatus("Export failed: " + err.message, "err");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Download YAML"; }
+  }
+}
+
+function yamlFilename() {
+  const name = (state.project && state.project.name) || "register_map";
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return (slug || "register_map") + ".yaml";
+}
+
+// Replace the project's registers with an uploaded YAML file. The server
+// does the parsing; on success the page reloads so the editor shows exactly
+// what was stored.
 async function uploadYaml(file) {
-  if (!file) return;
+  if (!file || !state.project) return;
+  setStatus("Parsing " + file.name + "…");
   const fd = new FormData();
   fd.append("file", file);
-  setStatus("Parsing " + file.name + "…");
   try {
-    const res = await fetch("/upload", { method: "POST", body: fd });
-    const data = await res.json();
+    const res = await apiPostForm(state.project.import_url, fd);
+    if (res.redirected) {
+      window.location.assign(res.url);
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    const regs = (data.registers || []).map(normalizeRegister);
-    state.registers = regs;
-    // Apply settings from the file if it carried any. A missing / null
-    // `settings` field means the file is older or hand-written: leave the
-    // editor's current settings untouched. They are persisted so the
-    // settings page shows what the file carried.
-    let settingsApplied = false;
-    if (data.settings && typeof data.settings === "object" && Object.keys(data.settings).length > 0) {
-      settingsApplied = applyImportedSettings(data.settings);
-    }
-    render();
-    if (settingsApplied) {
-      setStatus(`Loaded ${regs.length} register(s) and applied settings from ${file.name}.`, "ok");
-    } else {
-      setStatus(`Loaded ${regs.length} register(s) from ${file.name}.`, "ok");
-    }
-  } catch (exc) {
-    setStatus("Upload failed: " + exc.message, "err");
+    window.location.reload();
+  } catch (err) {
+    setStatus("Upload failed: " + err.message, "err");
   }
-}
-
-// When we read YAML back, we get whatever the user had — normalize so the
-// form knows which keys to display. Unknown top-level keys are preserved
-// as user-defined custom fields so they round-trip cleanly.
-function normalizeRegister(r) {
-  const mnemonic = r.mnemonic ?? r.name ?? "";
-  const out = {
-    address: r.address ?? "",
-    mnemonic,
-    width: r.width ?? 32,
-    access: ACCESS_VALUES.has(r.access) ? r.access : "rw",
-    description: r.description ?? "",
-    reset_value: r.reset_value ?? "",
-  };
-  for (const [k, v] of Object.entries(r)) {
-    if (STANDARD_REGISTER_KEYS.has(k)) continue;
-    out[k] = v;
-  }
-  out.bits = Array.isArray(r.bits) ? r.bits.map(normalizeBit) : [];
-  return out;
-}
-
-function normalizeBit(b) {
-  return {
-    position: b.position ?? 0,
-    width: b.width ?? 1,
-    name: b.name ?? "",
-    access: ACCESS_VALUES.has(b.access) ? b.access : "",
-    description: b.description ?? "",
-    reset_value: b.reset_value ?? "",
-  };
 }
 
 // Export projection: drop register fields the user has hidden in the
@@ -565,6 +553,7 @@ function triggerDownload(blob, filename) {
 document.addEventListener("DOMContentLoaded", () => {
   $("#add-register").addEventListener("click", addRegister);
   $("#clear-all").addEventListener("click", clearAll);
+  $("#save").addEventListener("click", saveProject);
   $("#generate").addEventListener("click", downloadYaml);
   $("#upload-input").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
@@ -572,28 +561,6 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.value = ""; // allow re-uploading the same file
   });
 
-  // Registers only ever live in this tab — there is no server-side document
-  // to save them into — so any navigation (including the hop to /settings)
-  // throws unsaved work away. Flag the tab dirty and ask before walking off.
-  const markDirty = () => { state.dirty = true; };
-  document.addEventListener("input", markDirty, true);
-  document.addEventListener("change", markDirty, true);
-  document.addEventListener("click", (e) => {
-    if (e.target && e.target.closest && e.target.closest("[data-action]")) markDirty();
-  }, true);
-
-  const settingsLink = $("#nav-settings");
-  if (settingsLink) {
-    settingsLink.addEventListener("click", (e) => {
-      if (!state.dirty) return;
-      const go = confirm(
-        "Registers live only in this tab and are not saved yet.\n\n" +
-        "Leave for settings anyway? Download the YAML first if you want to keep this work.");
-      if (!go) e.preventDefault();
-    });
-  }
-
-  // Seed with one register so the page isn't empty on first load.
-  state.registers = [newRegister({ mnemonic: "CTRL" })];
+  updateSaveState();
   render();
 });

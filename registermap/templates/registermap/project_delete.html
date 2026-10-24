@@ -1,0 +1,20 @@
+{% extends "registermap/base.html" %}
+
+{% block title %}Delete {{ project.name }} — Register Map Editor{% endblock %}
+
+{% block content %}
+<section class="form-page">
+  <h2>Delete “{{ project.name }}”?</h2>
+  <p class="form-note">
+    This removes the project and its {{ project.register_count }} register(s).
+    Download the YAML first if you want to keep a copy — deletion cannot be undone.
+  </p>
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <div class="form-actions">
+      <button type="submit" class="danger">Delete project</button>
+      <a class="navlink" href="{{ project.get_absolute_url }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

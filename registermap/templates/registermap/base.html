@@ -1,0 +1,31 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Register Map Editor{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'registermap/style.css' %}">
+</head>
+<body>
+  <header>
+    {% block header %}
+    <h1><a class="brand" href="{% url 'registermap:dashboard' %}">Register Map Editor</a></h1>
+    <p class="sub">Define registers and bit fields, then export a YAML register map or import one for editing.</p>
+    {% endblock %}
+  </header>
+
+  {% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <p class="message {{ message.tags }}">{{ message }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+
+  {% include "registermap/_footer.html" %}
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
