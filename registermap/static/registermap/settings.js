@@ -40,13 +40,16 @@ function renderSettingsCustomFieldRow(cf) {
       return;
     }
     cf.key = newKey;
-    saveSettings();
+    markSettingsDirty();
     renderSettingsCustomFields();
   });
   row.appendChild(keyInput);
 
+  // The type is fixed once the field is created: changing it would leave
+  // the values already stored on the registers uninterpretable.
   const typeSelect = document.createElement("select");
-  typeSelect.title = "Field type";
+  typeSelect.title = "The type can't be changed after the field is created.";
+  typeSelect.disabled = true;
   for (const t of CUSTOM_FIELD_TYPES) {
     const opt = document.createElement("option");
     opt.value = t;
@@ -54,28 +57,6 @@ function renderSettingsCustomFieldRow(cf) {
     if (t === (cf.type || "string")) opt.selected = true;
     typeSelect.appendChild(opt);
   }
-  typeSelect.addEventListener("change", () => {
-    const newType = typeSelect.value;
-    cf.type = newType;
-    // Keep an option list around so switching back to select isn't a
-    // re-typing exercise; it is only exported while type === "select".
-    if (newType === "select" && parseOptions(cf.options).length === 0) {
-      cf.options = cf.default ? [String(cf.default)] : [];
-    }
-    // Re-validate the existing default against the new type.
-    const parsed = parseTypedValue(cf.default, newType, { options: cf.options });
-    if (parsed.ok) {
-      cf.default = parsed.value;
-    } else {
-      cf.default = "";
-      setStatus(`Default value for "${cf.key}" is invalid for type ${newType}; cleared.`, "warn");
-    }
-    if (newType === "select" && parseOptions(cf.options).length === 0) {
-      setStatus(`"${cf.key}" needs at least one option before a value can be set.`, "warn");
-    }
-    saveSettings();
-    renderSettingsCustomFields();
-  });
   row.appendChild(typeSelect);
 
   // Option list — only rendered for select fields; every other type lets the
@@ -103,7 +84,7 @@ function renderSettingsCustomFieldRow(cf) {
         optInput.classList.remove("input-error");
         optInput.title = "";
       }
-      saveSettings();
+      markSettingsDirty();
     });
     row.appendChild(optInput);
   }
@@ -119,7 +100,7 @@ function renderSettingsCustomFieldRow(cf) {
     if (idx < 0) return;
     if (!confirm(`Remove custom field "${cf.key}" from every register?`)) return;
     state.settings.customFields.splice(idx, 1);
-    saveSettings();
+    markSettingsDirty();
     renderSettingsCustomFields();
   });
   row.appendChild(remove);
@@ -149,7 +130,7 @@ function buildSettingsDefaultControl(cf, spanTwo) {
     sel.addEventListener("change", () => {
       const b = storedBool(sel.value);
       cf.default = b === undefined ? "" : b;
-      saveSettings();
+      markSettingsDirty();
     });
     return sel;
   }
@@ -162,7 +143,7 @@ function buildSettingsDefaultControl(cf, spanTwo) {
     sel.addEventListener("change", () => {
       const parsed = parseTypedValue(sel.value, "select", { options: cf.options });
       cf.default = parsed.ok ? parsed.value : "";
-      saveSettings();
+      markSettingsDirty();
     });
     return sel;
   }
@@ -186,7 +167,7 @@ function buildSettingsDefaultControl(cf, spanTwo) {
     defInput.title = "";
     cf.default = parsed.value;
     // Default applies to NEW registers only; existing values are preserved.
-    saveSettings();
+    markSettingsDirty();
   });
   return defInput;
 }
@@ -241,17 +222,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const newCfDefault = $("#new-cf-default");
 
   syncSettingsUI();
+  updateSaveState();
 
   addrIncInput.addEventListener("input", () => {
     state.settings.addressIncrement = addrIncInput.value;
-    saveSettings();
+    markSettingsDirty();
   });
 
   defaultWidthInput.addEventListener("input", () => {
     const n = Number(defaultWidthInput.value);
     state.settings.defaultWidth =
       Number.isFinite(n) && n >= 1 ? Math.min(1024, Math.floor(n)) : 32;
-    saveSettings();
+    markSettingsDirty();
   });
 
   fieldCheckboxes.forEach((cb) => {
@@ -259,16 +241,22 @@ document.addEventListener("DOMContentLoaded", () => {
       const key = cb.dataset.settingField;
       if (cb.checked) state.settings.enabledFields.add(key);
       else state.settings.enabledFields.delete(key);
-      saveSettings();
+      markSettingsDirty();
     });
   });
 
+  // Nothing is written back until you press Save.
+  $("#save-settings").addEventListener("click", saveSettingsNow);
+
   $("#settings-reset").addEventListener("click", () => {
-    if (!confirm("Reset register-map settings to defaults?")) return;
+    if (!confirm(
+      "Reset register-map settings to defaults?\n\n" +
+      "Custom fields are removed from the definition, and their values are " +
+      "stripped from every register.")) return;
     state.settings = defaultSettings();
     syncSettingsUI();
-    saveSettings();
-    setStatus("Settings reset to defaults.", "ok");
+    markSettingsDirty();
+    setStatus("Settings reset to defaults. Press Save to store them.", "warn");
   });
 
   // ---- Custom fields ----------------------------------------------------
@@ -335,7 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     state.settings.customFields.push({ key, type, default: parsed.value, options });
-    saveSettings();
+    markSettingsDirty();
     newCfKey.value = "";
     newCfOptions.value = "";
     newCfDefault.value = "";

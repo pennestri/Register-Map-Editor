@@ -22,13 +22,20 @@ external services.
     and description.
   - **Custom fields** on every register: `string`, `integer`, `float`,
     `select` (a drop-down limited to an option list you define) and
-    `boolean` (a checkbox that emits a real `true` / `false`).
+    `boolean` (a checkbox that emits a real `true` / `false`). The type is
+    chosen when the field is created and can't be changed afterwards.
   - **Save** writes the map back to the project; **Download YAML** exports
     exactly what is on screen, saved or not.
   - **Upload YAML** replaces the project's registers with a file. Settings
     the file carries are adopted; settings it doesn't carry are left alone.
-- **Settings page** at `/projects/<id>/settings/` — every change is written
-  back to the project as you make it.
+- **Settings page** at `/projects/<id>/settings/` — every change stays local
+  until you press **Save settings**; the page warns you before you leave with
+  unsaved edits.
+  - The **type** of a custom field is fixed once the field is created, so the
+    values already stored on the registers always stay interpretable.
+  - **Removing a custom field strips it from every register** in the map.
+  - **Removing an option from a `select` field** puts that field's default
+    back on every register that used the removed option.
 - **Download / import YAML** anywhere. The file format is stable: a file
   exported by this tool can be imported again, and files written by earlier
   versions still load.

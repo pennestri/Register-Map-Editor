@@ -250,8 +250,11 @@ function updateSaveState() {
     if (el.textContent !== text) el.textContent = text;
     el.classList.toggle("dirty", state.dirty);
   }
+  // The editor saves the registers, the settings page saves the settings.
   const saveBtn = $("#save");
   if (saveBtn) saveBtn.disabled = !state.dirty;
+  const settingsBtn = $("#save-settings");
+  if (settingsBtn) settingsBtn.disabled = !state.dirty;
 }
 
 function markDirty() {
@@ -278,24 +281,21 @@ window.addEventListener("beforeunload", (e) => {
 
 // ---- Settings persistence ------------------------------------------------
 
-// The settings page saves on every change (debounced). The revision counter
-// makes sure a slow response never overwrites newer edits.
+// The settings page does NOT save on every keystroke: changes stay local
+// until you press Save. The revision counter makes sure a slow response
+// never overwrites newer edits.
 let settingsRevision = 0;
-let saveTimer = null;
-let settingsPending = false;
 
-function saveSettings() {
-  if (!state.project || !state.project.settings_save_url) return;
+function markSettingsDirty() {
   settingsRevision++;
-  settingsPending = true;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(flushSettings, 300);
+  markDirty();
 }
 
-async function flushSettings() {
-  if (!settingsPending || !state.project) return;
-  settingsPending = false;
+async function saveSettingsNow() {
+  if (!state.project || !state.project.settings_save_url) return;
   const revision = settingsRevision;
+  const btn = $("#save-settings");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
   try {
     const res = await apiPost(state.project.settings_save_url, {
       settings: projectSettings(),
@@ -307,8 +307,11 @@ async function flushSettings() {
       state.settings = normalizeSettings(data.settings);
     }
     markSaved();
+    setStatus("Settings saved.", "ok");
   } catch (err) {
     setStatus("Could not save settings: " + err.message, "err");
+  } finally {
+    if (btn) { btn.textContent = "Save settings"; btn.disabled = !state.dirty; }
   }
 }
 

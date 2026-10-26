@@ -13,6 +13,12 @@
 {% endblock %}
 
 {% block content %}
+<section class="toolbar">
+  <span class="toolbar-note">Settings for “{{ project.name }}”</span>
+  <span class="spacer"></span>
+  <button type="button" id="save-settings" class="primary" disabled>Save settings</button>
+</section>
+
 <div class="settings settings-page">
   <div class="settings-body">
     <label>Address increment
@@ -48,7 +54,7 @@
         <input type="text" id="new-cf-default" placeholder="default value" spellcheck="false" autocomplete="off">
         <button type="button" id="add-cf" class="primary small">+ Add</button>
       </div>
-      <small>Keys must be valid identifiers (letters, digits, underscore). Defaults are applied to every register. Removing a field deletes its key from every register. <strong>Type</strong> controls the input shown on each register and how the value is emitted in YAML: <em>string</em> is free text, <em>integer</em> accepts decimal or <code>0x</code> notation, <em>float</em> accepts decimals, <em>select</em> renders a drop-down limited to the options you list (comma separated), and <em>boolean</em> renders a checkbox that emits <code>true</code>/<code>false</code>.</small>
+      <small>Keys must be valid identifiers (letters, digits, underscore). The <strong>type</strong> is fixed once a field is created — it decides the input shown on each register and how the value is emitted in YAML: <em>string</em> is free text, <em>integer</em> accepts decimal or <code>0x</code> notation, <em>float</em> accepts decimals, <em>select</em> renders a drop-down limited to the options you list (comma separated), and <em>boolean</em> renders a checkbox that emits <code>true</code>/<code>false</code>. Removing a field strips its values from every register; removing an option from a <em>select</em> field puts that field's default back on the registers that used it.</small>
     </fieldset>
     <button type="button" id="settings-reset" class="ghost small">Reset settings to defaults</button>
   </div>

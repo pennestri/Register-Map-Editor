@@ -262,6 +262,54 @@ def coerce_registers(raw: Any) -> list[dict]:
     return [_coerce_register(r) for r in raw if isinstance(r, dict)]
 
 
+def _custom_fields(settings: Any) -> dict[str, dict]:
+    """Index a settings dict's custom-field definitions by key."""
+    if not isinstance(settings, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for entry in settings.get("custom_fields") or []:
+        if isinstance(entry, dict) and isinstance(entry.get("key"), str):
+            out[entry["key"]] = entry
+    return out
+
+
+def reconcile_registers(registers: list[dict], old_settings: Any,
+                        new_settings: Any) -> list[dict]:
+    """Apply a settings change to the stored registers.
+
+    Two rules:
+
+    * A custom field that is no longer defined is stripped from every
+      register.
+    * A register holding a select value that is no longer one of the
+      field's options falls back to that field's default (which is unset
+      when the default isn't a valid option either).
+
+    Registers are modified in place and returned.
+    """
+    old_fields = _custom_fields(old_settings)
+    new_fields = _custom_fields(new_settings)
+    removed = [k for k in old_fields if k not in new_fields]
+
+    for reg in registers:
+        if not isinstance(reg, dict):
+            continue
+        for key in removed:
+            reg.pop(key, None)
+        for key, field in new_fields.items():
+            if field.get("type") != "select":
+                continue
+            options = coerce_options(field.get("options"))
+            value = reg.get(key)
+            if value is None or value == "":
+                continue  # an unset field stays unset
+            if str(value) in options:
+                continue  # still a valid choice
+            default = field.get("default")
+            reg[key] = default if default else ""
+    return registers
+
+
 # ---------------------------------------------------------------------------
 # Import
 # ---------------------------------------------------------------------------

@@ -86,6 +86,7 @@ header .sub a:hover { color: var(--text); }
   z-index: 5;
 }
 .toolbar .spacer { flex: 1; }
+.toolbar-note { font-size: 13px; color: var(--muted); }
 
 /* ---- Register map settings -------------------------------------------- */
 .settings {
@@ -437,6 +438,12 @@ button.small {
 .settings-cf-row select {
   font-family: inherit;
   cursor: pointer;
+}
+/* The custom-field type is fixed once the field exists. */
+.settings-cf-row select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  color: var(--muted);
 }
 .settings-cf-row input:focus,
 .settings-cf-row select:focus {

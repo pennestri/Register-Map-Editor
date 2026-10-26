@@ -303,6 +303,85 @@ class SettingsTests(TestCase):
         self.project.refresh_from_db()
         self.assertNotIn("default_width", self.project.settings)
 
+    def test_removing_a_custom_field_strips_it_from_every_register(self):
+        self.project.registers = [
+            {"mnemonic": "A", "vendor": "acme", "mode": "fast"},
+            {"mnemonic": "B", "vendor": "globex", "mode": "slow"},
+        ]
+        self.project.settings = {"custom_fields": [
+            {"key": "vendor", "type": "string", "default": "acme"},
+            {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "fast"},
+        ]}
+        self.project.save()
+
+        url = reverse("registermap:settings_save", args=[self.project.pk])
+        self.client.post(url, json.dumps({"settings": {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "fast"},
+        ]}}), content_type="application/json")
+
+        self.project.refresh_from_db()
+        self.assertNotIn("vendor", self.project.registers[0])
+        self.assertNotIn("vendor", self.project.registers[1])
+        # The field that is still defined is untouched.
+        self.assertEqual(self.project.registers[0]["mode"], "fast")
+        self.assertEqual(self.project.registers[1]["mode"], "slow")
+
+    def test_removing_a_select_option_puts_the_default_back(self):
+        self.project.registers = [
+            {"mnemonic": "A", "mode": "slow"},
+            {"mnemonic": "B", "mode": "fast"},
+            {"mnemonic": "C"},          # never set
+        ]
+        self.project.settings = {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "fast"},
+        ]}
+        self.project.save()
+
+        url = reverse("registermap:settings_save", args=[self.project.pk])
+        self.client.post(url, json.dumps({"settings": {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast"], "default": "fast"},
+        ]}}), content_type="application/json")
+
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.registers[0]["mode"], "fast")  # slow -> default
+        self.assertEqual(self.project.registers[1]["mode"], "fast")  # unchanged
+        self.assertNotIn("mode", self.project.registers[2])           # stays unset
+
+    def test_removing_the_default_option_unsets_the_value(self):
+        self.project.registers = [{"mnemonic": "A", "mode": "slow"}]
+        self.project.settings = {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "slow"},
+        ]}
+        self.project.save()
+
+        url = reverse("registermap:settings_save", args=[self.project.pk])
+        self.client.post(url, json.dumps({"settings": {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast"], "default": "slow"},
+        ]}}), content_type="application/json")
+
+        self.project.refresh_from_db()
+        # "slow" is no longer an option and the default isn't valid either.
+        self.assertEqual(self.project.registers[0]["mode"], "")
+
+    def test_untouched_select_values_survive_a_settings_save(self):
+        self.project.registers = [{"mnemonic": "A", "mode": "slow"}]
+        self.project.settings = {"custom_fields": [
+            {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "fast"},
+        ]}
+        self.project.save()
+
+        url = reverse("registermap:settings_save", args=[self.project.pk])
+        self.client.post(url, json.dumps({"settings": {
+            "default_width": 16,
+            "custom_fields": [
+                {"key": "mode", "type": "select", "options": ["fast", "slow"], "default": "fast"},
+            ],
+        }}), content_type="application/json")
+
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.registers[0]["mode"], "slow")
+        self.assertEqual(self.project.settings["default_width"], 16)
+
 
 class LocalOnlyTests(TestCase):
     """There is no login: everything works for whoever opens the app."""

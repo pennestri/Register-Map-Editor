@@ -207,7 +207,13 @@ def project_save(request: HttpRequest, pk: int) -> JsonResponse:
 
 @require_POST
 def settings_save(request: HttpRequest, pk: int) -> JsonResponse:
-    """Store the settings of a project and hand back the coerced version."""
+    """Store the settings of a project and hand back the coerced version.
+
+    The settings change is also applied to the stored registers: a custom
+    field that is gone is stripped from every register, and a register
+    holding a select value that is no longer an option falls back to the
+    field's default.
+    """
     project = get_object_or_404(Project, pk=pk)
     try:
         payload = json.loads(request.body or b"{}")
@@ -215,9 +221,16 @@ def settings_save(request: HttpRequest, pk: int) -> JsonResponse:
         return JsonResponse({"error": "Malformed JSON body."}, status=400)
 
     settings = yamlio.coerce_settings(payload.get("settings"))
+    registers = yamlio.reconcile_registers(
+        list(project.registers or []), project.settings or {}, settings)
     project.settings = settings
-    project.save(update_fields=["settings", "updated_at"])
-    return JsonResponse({"ok": True, "settings": settings})
+    project.registers = registers
+    project.save(update_fields=["settings", "registers", "updated_at"])
+    return JsonResponse({
+        "ok": True,
+        "settings": settings,
+        "register_count": len(registers),
+    })
 
 
 # ---------------------------------------------------------------------------
