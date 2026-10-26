@@ -262,6 +262,54 @@ def coerce_registers(raw: Any) -> list[dict]:
     return [_coerce_register(r) for r in raw if isinstance(r, dict)]
 
 
+# The shape the editor expects for a bit row.
+_BIT_DEFAULTS: dict[str, Any] = {
+    "position": 0,
+    "width": 1,
+    "name": "",
+    "access": "",
+    "description": "",
+    "reset_value": "",
+}
+
+
+def bit_for_editor(bit: dict) -> dict:
+    """A bit row with every key the editor binds to present."""
+    out = dict(bit)
+    for key, default in _BIT_DEFAULTS.items():
+        out.setdefault(key, default)
+    return out
+
+
+def register_for_editor(reg: dict, default_width: int = 32) -> dict:
+    """A register in the shape the editor expects.
+
+    The stored form is compact — empty fields are dropped so the YAML stays
+    tidy — but the editor binds to every standard key and walks the bit
+    list. Handing it a register without a ``bits`` key would make the
+    renderer throw and blank the whole page, so the shape is filled out
+    here.
+    """
+    out = dict(reg)
+    out.setdefault("address", "")
+    out.setdefault("mnemonic", "")
+    out.setdefault("width", default_width)
+    out.setdefault("access", "rw")
+    out.setdefault("description", "")
+    out.setdefault("reset_value", "")
+    out["bits"] = [bit_for_editor(b) for b in (reg.get("bits") or [])
+                   if isinstance(b, dict)]
+    return out
+
+
+def registers_for_editor(registers: Any, default_width: int = 32) -> list[dict]:
+    """Every register of a project, in the shape the editor expects."""
+    if not isinstance(registers, list):
+        return []
+    return [register_for_editor(r, default_width) for r in registers
+            if isinstance(r, dict)]
+
+
 def _custom_fields(settings: Any) -> dict[str, dict]:
     """Index a settings dict's custom-field definitions by key."""
     if not isinstance(settings, dict):

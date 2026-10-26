@@ -1,10 +1,11 @@
-{% load static %}<!doctype html>
+{% load static %}{% load registermap_tags %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}Register Map Editor{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'registermap/style.css' %}">
+  <link rel="stylesheet" href="{% static_v 'registermap/style.css' %}">
 </head>
 <body>
   <header>

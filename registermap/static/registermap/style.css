@@ -54,6 +54,26 @@ header .sub a:hover { color: var(--text); }
 .save-state { font-size: 12px; color: var(--muted); }
 .save-state.dirty { color: var(--warn); }
 
+/* A register the editor could not render. */
+.reg-broken {
+  border-color: var(--danger);
+  color: #ffc1c1;
+  background: #2a1414;
+  font-size: 13px;
+}
+
+/* A page-level problem banner: something that stops the page working. */
+.page-problem {
+  margin: 14px 28px 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #2a1414;
+  border: 1px solid var(--danger);
+  color: #ffc1c1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* Flash messages */
 .messages {
   margin: 14px 28px 0;

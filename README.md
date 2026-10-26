@@ -175,6 +175,19 @@ top-level `registers:` key, or a flat `register_map: [ ... ]` list.
 
 See `examples/sample_register_map.yaml` for a full example.
 
+## If the page looks broken
+
+The editor is plain JavaScript talking to the server; if the two drift apart
+the page can end up half-working. Two things guard against that:
+
+- Static assets are served with a version query string (`?v=…`) tied to the
+  file's mtime, so a browser can never run a stale copy of a script.
+- The CSRF token is rendered into the page, not read from a cookie, so a
+  missing cookie can't turn a save into a silent 403.
+
+If a page still misbehaves, reload it (F5). A broken page says so in a red
+banner instead of leaving a dead button.
+
 ## Endpoints
 
 | Method | Path                              | Returns                        |

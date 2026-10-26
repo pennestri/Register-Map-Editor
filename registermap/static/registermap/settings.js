@@ -213,6 +213,7 @@ function syncSettingsUI() {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
+  checkProjectLoaded();
   const addrIncInput = $("#setting-addr-inc");
   const defaultWidthInput = $("#setting-default-width");
   const fieldCheckboxes = document.querySelectorAll("[data-setting-field]");

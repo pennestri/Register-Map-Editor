@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -174,6 +175,53 @@ class EditorTests(TestCase):
         body = response.content.decode()
         self.assertIn('id="project-data"', body)
         self.assertIn("CTRL", body)
+
+    def test_a_saved_register_comes_back_complete(self):
+        """A register saved without bit rows must load again.
+
+        The stored form is compact — empty fields are dropped — so the
+        editor gets the full shape back. Without this the editor used to
+        throw on 'reg.bits' and show an empty map.
+        """
+        self.client.post(
+            reverse("registermap:save", args=[self.project.pk]),
+            json.dumps({"registers": [{
+                "address": "0x00000000", "mnemonic": "CTRL", "width": 32,
+                "access": "rw", "description": "", "reset_value": "", "bits": [],
+            }]}),
+            content_type="application/json",
+        )
+        response = self.client.get(self.project.get_absolute_url())
+        body = response.content.decode()
+        payload = json.loads(
+            re.search(r'id="project-data" type="application/json">(.*?)</script>',
+                      body, re.S).group(1).replace("<\\/", "</"))
+        register = payload["registers"][0]
+        self.assertEqual(register["mnemonic"], "CTRL")
+        self.assertEqual(register["bits"], [])          # the key is there
+        for key in ("address", "width", "access", "description", "reset_value"):
+            self.assertIn(key, register)                 # and so are the rest
+
+    def test_a_register_with_bits_comes_back_complete(self):
+        self.client.post(
+            reverse("registermap:save", args=[self.project.pk]),
+            json.dumps({"registers": [{
+                "mnemonic": "CTRL", "width": 32, "bits": [
+                    {"position": 0, "name": "ENABLE", "width": 1},
+                ],
+            }]}),
+            content_type="application/json",
+        )
+        response = self.client.get(self.project.get_absolute_url())
+        body = response.content.decode()
+        payload = json.loads(
+            re.search(r'id="project-data" type="application/json">(.*?)</script>',
+                      body, re.S).group(1).replace("<\\/", "</"))
+        bit = payload["registers"][0]["bits"][0]
+        self.assertEqual(bit["name"], "ENABLE")
+        for key in ("position", "width", "name", "access", "description",
+                    "reset_value"):
+            self.assertIn(key, bit)
 
     def test_save_stores_the_registers(self):
         url = reverse("registermap:save", args=[self.project.pk])
@@ -384,7 +432,6 @@ class SettingsTests(TestCase):
 
 
 class LocalOnlyTests(TestCase):
-    """There is no login: everything works for whoever opens the app."""
 
     def test_no_login_page_is_reachable(self):
         for path in ("/login/", "/accounts/login/", "/admin/"):
@@ -395,3 +442,26 @@ class LocalOnlyTests(TestCase):
         response = self.client.get(reverse("registermap:dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("password", response.content.decode().lower())
+
+
+class StaleAssetTests(TestCase):
+    """The editor's JavaScript is tightly coupled to the Python behind it."""
+
+    def setUp(self):
+        self.project = Project.objects.create(name="Map")
+
+    def test_static_urls_carry_a_version(self):
+        response = self.client.get(self.project.get_absolute_url())
+        body = response.content.decode()
+        for asset in ("core.js", "editor.js", "style.css"):
+            with self.subTest(asset=asset):
+                self.assertIn(f"registermap/{asset}?v=", body)
+
+    def test_the_page_carries_a_csrf_token(self):
+        response = self.client.get(self.project.get_absolute_url())
+        body = response.content.decode()
+        self.assertIn('<meta name="csrf-token" content="', body)
+
+    def test_the_settings_page_carries_a_csrf_token(self):
+        response = self.client.get(self.project.get_settings_url())
+        self.assertIn('<meta name="csrf-token" content="', response.content.decode())

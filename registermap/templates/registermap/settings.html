@@ -1,5 +1,6 @@
 {% extends "registermap/base.html" %}
 {% load static %}
+{% load registermap_tags %}
 
 {% block title %}Settings — {{ project.name }} — Register Map Editor{% endblock %}
 
@@ -65,6 +66,6 @@
 
 {% block scripts %}
 <script id="project-data" type="application/json">{{ project_json|safe }}</script>
-<script src="{% static 'registermap/core.js' %}"></script>
-<script src="{% static 'registermap/settings.js' %}"></script>
+<script src="{% static_v 'registermap/core.js' %}"></script>
+<script src="{% static_v 'registermap/settings.js' %}"></script>
 {% endblock %}

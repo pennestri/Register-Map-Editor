@@ -122,7 +122,18 @@ function render() {
     return;
   }
 
-  state.registers.forEach((reg, i) => root.appendChild(renderRegister(reg, i)));
+  // One broken register must not hide all the others.
+  state.registers.forEach((reg, i) => {
+    try {
+      root.appendChild(renderRegister(reg, i));
+    } catch (err) {
+      console.error(`Register #${i + 1} could not be rendered.`, err);
+      const broken = document.createElement("div");
+      broken.className = "reg-card reg-broken";
+      broken.textContent = `Register #${i + 1} could not be shown: ${err.message}`;
+      root.appendChild(broken);
+    }
+  });
 }
 
 function renderRegister(reg, index) {
@@ -166,9 +177,12 @@ function renderRegister(reg, index) {
   const cfHost = node.querySelector("[data-role=custom-fields]");
   if (cfHost) renderCustomFields(reg, cfHost, node);
 
-  // Bits.
+  // Bits. A register that was stored without any bit rows has no 'bits'
+  // key at all, so never assume it is there.
   const bitsEl = node.querySelector("[data-role=bits]");
-  reg.bits.forEach((bit) => bitsEl.appendChild(renderBit(bit, node)));
+  const bits = Array.isArray(reg.bits) ? reg.bits : [];
+  reg.bits = bits;
+  bits.forEach((bit) => bitsEl.appendChild(renderBit(bit, node)));
 
   return node;
 }
@@ -423,14 +437,18 @@ function clearAll() {
 
 // Write the edited registers back to the server.
 async function saveProject() {
-  if (!state.project) return;
+  if (!state.project) {
+    setStatus("No project is loaded, so there is nothing to save. Reload the page.", "err");
+    reportProblem("No project is loaded, so saving is disabled. Reload the page (F5).");
+    return;
+  }
   const btn = $("#save");
   if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
   try {
     const res = await apiPost(state.project.save_url, { registers: state.registers });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${res.status}`);
+      throw new Error(err.error || describeFailure(res));
     }
     const data = await res.json();
     markSaved();
@@ -458,7 +476,7 @@ async function downloadYaml() {
       registers: state.registers.map(projectForExport),
       settings: projectSettings(),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(describeFailure(res));
     const blob = await res.blob();
     triggerDownload(blob, yamlFilename());
     setStatus(`Exported ${state.registers.length} register(s) to YAML.`, "ok");
@@ -551,6 +569,7 @@ function triggerDownload(blob, filename) {
 // ---------------------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
+  checkProjectLoaded();
   $("#add-register").addEventListener("click", addRegister);
   $("#clear-all").addEventListener("click", clearAll);
   $("#save").addEventListener("click", saveProject);

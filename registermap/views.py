@@ -33,6 +33,10 @@ def json_for_html(obj: Any) -> str:
 
 def _project_payload(project: Project) -> dict[str, Any]:
     """The blob the editor and settings pages read on boot."""
+    settings = project.settings or {}
+    default_width = settings.get("default_width")
+    if not isinstance(default_width, int) or not 1 <= default_width <= 1024:
+        default_width = 32
     return {
         "project": {
             "id": project.pk,
@@ -44,8 +48,9 @@ def _project_payload(project: Project) -> dict[str, Any]:
             "export_url": reverse("registermap:export", args=[project.pk]),
             "import_url": reverse("registermap:import", args=[project.pk]),
         },
-        "settings": project.settings or {},
-        "registers": project.registers or [],
+        "settings": settings,
+        # The stored registers are compact; the editor needs the full shape.
+        "registers": yamlio.registers_for_editor(project.registers, default_width),
     }
 
 

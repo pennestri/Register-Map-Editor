@@ -185,29 +185,86 @@ function normalizeSettings(raw) {
 
 // ---- Project data --------------------------------------------------------
 
-const PROJECT_DATA = (() => {
+// Read the project the server embedded in this page. A parse failure is
+// recorded rather than thrown: the page still has to render, and the error
+// has to reach the user instead of leaving a dead Save button behind.
+function readProjectData() {
   const el = document.getElementById("project-data");
-  if (!el) return { project: null, settings: {}, registers: [] };
+  if (!el) return { project: null, settings: {}, registers: [], error: null };
   try {
-    return JSON.parse(el.textContent);
+    const data = JSON.parse(el.textContent);
+    if (!data || typeof data !== "object") {
+      return { project: null, settings: {}, registers: [], error: "malformed" };
+    }
+    return {
+      project: data.project || null,
+      settings: data.settings || {},
+      registers: Array.isArray(data.registers) ? data.registers : [],
+      error: null,
+    };
   } catch (e) {
     console.error("Could not read the embedded project data.", e);
-    return { project: null, settings: {}, registers: [] };
+    return { project: null, settings: {}, registers: [], error: "unreadable" };
   }
-})();
+}
+
+const PROJECT_DATA = readProjectData();
 
 const state = {
   project: PROJECT_DATA.project || null,
   settings: normalizeSettings(PROJECT_DATA.settings),
-  registers: Array.isArray(PROJECT_DATA.registers) ? PROJECT_DATA.registers : [],
+  registers: PROJECT_DATA.registers,
   dirty: false,     // there are unsaved changes
+  problem: PROJECT_DATA.error,   // why the page can't work, if it can't
 };
+
+// Show a problem where the user will actually see it.
+function reportProblem(message) {
+  let banner = document.getElementById("page-problem");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "page-problem";
+    banner.className = "page-problem";
+    (document.body || document.documentElement).appendChild(banner);
+  }
+  banner.textContent = message;
+  banner.hidden = false;
+}
+
+// The editor and the settings page both need a project. Without one the
+// Save buttons cannot work, so say so instead of failing quietly.
+function checkProjectLoaded() {
+  if (state.problem === "unreadable") {
+    reportProblem("This page could not read the project data. Reload it (F5) — if it keeps happening, the server is serving an outdated version of the page.");
+    return false;
+  }
+  if (state.problem === "malformed" || (!state.project && document.getElementById("project-data"))) {
+    reportProblem("This page has no project loaded, so saving is disabled. Reload it (F5).");
+    return false;
+  }
+  return true;
+}
 
 // ---- Server plumbing -----------------------------------------------------
 
 function csrfToken() {
+  // The token rendered into the page is the most reliable source: the
+  // cookie can be missing (cleared, or set on another host name).
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta && meta.content) return meta.content;
   const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : "";
+}
+
+// Turn a failed response into a message that says what to do about it.
+function describeFailure(res) {
+  if (res.status === 403) {
+    return "the server rejected the request (HTTP 403). Reload the page (F5) and save again — this is usually a stale page or a missing cookie.";
+  }
+  if (res.status === 404) {
+    return "the project no longer exists (HTTP 404). Go back to the dashboard.";
+  }
+  return `HTTP ${res.status}`;
 }
 
 // POST a JSON body. Returns the raw Response so callers can pick the status
@@ -292,7 +349,11 @@ function markSettingsDirty() {
 }
 
 async function saveSettingsNow() {
-  if (!state.project || !state.project.settings_save_url) return;
+  if (!state.project || !state.project.settings_save_url) {
+    setStatus("No project is loaded, so there is nothing to save. Reload the page.", "err");
+    reportProblem("No project is loaded, so saving is disabled. Reload the page (F5).");
+    return;
+  }
   const revision = settingsRevision;
   const btn = $("#save-settings");
   if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
@@ -300,7 +361,7 @@ async function saveSettingsNow() {
     const res = await apiPost(state.project.settings_save_url, {
       settings: projectSettings(),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(describeFailure(res));
     const data = await res.json();
     // Only adopt the server's coerced copy if nothing changed meanwhile.
     if (revision === settingsRevision) {
