@@ -96,13 +96,16 @@ function newBit(overrides = {}) {
 }
 
 function findRegister(cardEl) {
-  const cards = [...document.querySelectorAll("[data-role=register]")];
-  return state.registers[cards.indexOf(cardEl)];
+  // The card carries its own index: only the selected register is in the
+  // DOM, so the card's position says nothing about which register it is.
+  const idx = Number(cardEl.dataset.index);
+  return Number.isInteger(idx) ? state.registers[idx] : undefined;
 }
 
 function findBit(rowEl, regCardEl) {
   const rows = [...regCardEl.querySelectorAll("[data-role=bit]")];
   const reg = findRegister(regCardEl);
+  if (!reg) return undefined;
   return reg.bits[rows.indexOf(rowEl)];
 }
 
@@ -111,33 +114,79 @@ function findBit(rowEl, regCardEl) {
 // ---------------------------------------------------------------------------
 
 function render() {
-  const root = $("#registers");
-  root.innerHTML = "";
+  renderRegisterTable();
+  renderRegisterDetail();
+}
 
-  if (state.registers.length === 0) {
+// The left pane: a table of every register in the map.
+function renderRegisterTable() {
+  const body = $("#reg-table-body");
+  const empty = $("#reg-table-empty");
+  const count = $("#reg-count");
+  if (!body) return;
+  body.innerHTML = "";
+  if (count) count.textContent = String(state.registers.length);
+  if (empty) empty.hidden = state.registers.length > 0;
+
+  state.registers.forEach((reg, i) => {
+    const row = document.createElement("tr");
+    row.className = "reg-row" + (i === state.selected ? " selected" : "");
+    row.dataset.index = String(i);
+    row.title = reg.mnemonic ? reg.mnemonic : `Register ${i + 1}`;
+
+    const idCell = document.createElement("td");
+    idCell.className = "col-id";
+    idCell.textContent = String(i + 1);
+
+    const nameCell = document.createElement("td");
+    nameCell.className = "col-mnemonic";
+    nameCell.textContent = reg.mnemonic || "—";
+
+    row.appendChild(idCell);
+    row.appendChild(nameCell);
+    row.addEventListener("click", () => selectRegister(i));
+    body.appendChild(row);
+  });
+}
+
+// Keep one row's mnemonic in step with an edit in the detail pane.
+function updateTableRow(index) {
+  const body = $("#reg-table-body");
+  if (!body) return;
+  const row = body.children[index];
+  if (!row) return;
+  const cell = row.querySelector(".col-mnemonic");
+  if (cell) cell.textContent = state.registers[index]?.mnemonic || "—";
+}
+
+// The right pane: the register the user picked.
+function renderRegisterDetail() {
+  const host = $("#reg-detail");
+  if (!host) return;
+  host.innerHTML = "";
+  const reg = state.registers[state.selected];
+  if (!reg) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No registers yet. Click “+ Add register” to start.";
-    root.appendChild(empty);
+    empty.textContent = state.registers.length
+      ? "Pick a register from the list."
+      : "No registers yet. Click “+ Add register” to start.";
+    host.appendChild(empty);
     return;
   }
+  host.appendChild(renderRegister(reg, state.selected));
+}
 
-  // One broken register must not hide all the others.
-  state.registers.forEach((reg, i) => {
-    try {
-      root.appendChild(renderRegister(reg, i));
-    } catch (err) {
-      console.error(`Register #${i + 1} could not be rendered.`, err);
-      const broken = document.createElement("div");
-      broken.className = "reg-card reg-broken";
-      broken.textContent = `Register #${i + 1} could not be shown: ${err.message}`;
-      root.appendChild(broken);
-    }
-  });
+function selectRegister(index) {
+  if (index < 0 || index >= state.registers.length) return;
+  state.selected = index;
+  renderRegisterTable();
+  renderRegisterDetail();
 }
 
 function renderRegister(reg, index) {
   const node = registerTpl.content.firstElementChild.cloneNode(true);
+  node.dataset.index = String(index);
   node.querySelector("[data-role=index]").textContent = "#" + (index + 1);
 
   // Bind scalar fields. Hide any field that the user disabled in settings
@@ -157,7 +206,10 @@ function renderRegister(reg, index) {
 
     input.addEventListener("input", () => {
       const r = findRegister(node);
+      if (!r) return;
       r[key] = coerce(input, key);
+      // The list on the left shows the mnemonic — keep it in step.
+      if (key === MNEMONIC_KEY) updateTableRow(index);
     });
   });
 
@@ -168,9 +220,15 @@ function renderRegister(reg, index) {
     render();
   });
   node.querySelector("[data-action=remove-register]").addEventListener("click", () => {
-    const idx = [...document.querySelectorAll("[data-role=register]")].indexOf(node);
-    if (idx >= 0) state.registers.splice(idx, 1);
-    render();
+    const idx = Number(node.dataset.index);
+    if (idx >= 0) {
+      state.registers.splice(idx, 1);
+      // Keep the selection on a register that still exists.
+      if (state.selected >= state.registers.length) {
+        state.selected = Math.max(0, state.registers.length - 1);
+      }
+      render();
+    }
   });
 
   // Custom fields (settings-defined first, then any extras on the register).
@@ -233,6 +291,7 @@ function renderCustomFieldRow(reg, key, regCardEl) {
   remove.textContent = "×";
   remove.addEventListener("click", () => {
     const r = findRegister(regCardEl);
+    if (!r) return;
     if (fromSettings) {
       r[key] = "";
       clearCustomValueControl(control, type);
@@ -262,6 +321,7 @@ function buildCustomValueControl(reg, key, type, regCardEl) {
     fillSelectOptions(select, options, reg[key]);
     select.addEventListener("change", () => {
       const r = findRegister(regCardEl);
+      if (!r) return;
       const parsed = parseTypedValue(select.value, "select", { options });
       // An empty pick means "unset"; anything the dropdown offered is valid.
       r[key] = parsed.ok ? parsed.value : select.value;
@@ -280,6 +340,7 @@ function buildCustomValueControl(reg, key, type, regCardEl) {
     lab.title = "Ticks store true, unticked stores false. Use × to leave the field unset.";
     box.addEventListener("change", () => {
       const r = findRegister(regCardEl);
+      if (!r) return;
       r[key] = box.checked;
       lab.classList.remove("unset");
       text.textContent = box.checked ? "true" : "false";
@@ -310,6 +371,7 @@ function buildCustomValueControl(reg, key, type, regCardEl) {
 
   input.addEventListener("input", () => {
     const r = findRegister(regCardEl);
+    if (!r) return;
     const raw = input.value;
     if (raw === "") {
       r[key] = "";
@@ -425,6 +487,7 @@ function coerce(input, key) {
 
 function addRegister() {
   state.registers.push(newRegister());
+  state.selected = state.registers.length - 1;
   render();
 }
 
@@ -432,6 +495,7 @@ function clearAll() {
   if (state.registers.length === 0) return;
   if (!confirm("Remove all registers?")) return;
   state.registers = [];
+  state.selected = 0;
   render();
 }
 

@@ -31,7 +31,25 @@
 
 <p id="status" class="status" hidden></p>
 
-<main id="registers" class="registers"></main>
+<main class="split-view">
+  <aside class="pane pane-list">
+    <div class="pane-head">
+      <h2>Registers</h2>
+      <span class="pane-count" id="reg-count">0</span>
+    </div>
+    <div class="table-scroll" id="reg-table-scroll">
+      <table class="reg-table">
+        <thead>
+          <tr><th class="col-id">ID</th><th>Mnemonic</th></tr>
+        </thead>
+        <tbody id="reg-table-body"></tbody>
+      </table>
+      <p class="pane-empty" id="reg-table-empty">No registers yet.</p>
+    </div>
+  </aside>
+
+  <section class="pane pane-detail" id="reg-detail"></section>
+</main>
 
 <template id="register-tpl">
   <article class="reg-card" data-role="register">

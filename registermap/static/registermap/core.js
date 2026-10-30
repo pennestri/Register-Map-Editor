@@ -214,6 +214,7 @@ const state = {
   project: PROJECT_DATA.project || null,
   settings: normalizeSettings(PROJECT_DATA.settings),
   registers: PROJECT_DATA.registers,
+  selected: 0,      // index of the register shown in the detail pane
   dirty: false,     // there are unsaved changes
   problem: PROJECT_DATA.error,   // why the page can't work, if it can't
 };

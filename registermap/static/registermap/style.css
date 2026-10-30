@@ -658,6 +658,127 @@ button.ghost { background: transparent; }
   margin: 0 auto;
 }
 
+/* ---- Split editor: register list on the left, register on the right ---- */
+.split-view {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 18px 28px 28px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.pane {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.pane-list {
+  position: sticky;
+  top: 76px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 10px;
+}
+.pane-head h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.pane-count {
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.pane-empty {
+  margin: 8px 4px 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The table scrolls on its own, so a long map doesn't push the register
+   off the screen. */
+.table-scroll {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+.reg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.reg-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  background: var(--panel);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.reg-table th.col-id { width: 46px; }
+.reg-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reg-table td.col-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  width: 46px;
+}
+.reg-table td.col-mnemonic { font-family: var(--mono); }
+.reg-table tbody tr {
+  cursor: pointer;
+}
+.reg-table tbody tr:hover td { background: var(--panel-2); }
+.reg-table tbody tr.selected td {
+  background: #1b2a44;
+  color: var(--text);
+}
+.reg-table tbody tr.selected td.col-id { color: var(--accent); }
+
+.pane-detail {
+  padding: 14px 16px 16px;
+}
+.pane-detail > .empty {
+  background: transparent;
+}
+
+@media (max-width: 860px) {
+  .split-view { grid-template-columns: 1fr; }
+  .pane-list { position: static; max-height: 320px; }
+}
+
 /* Shared page footer (templates/_footer.html) */
 .footer {
   margin-top: auto;           /* pins it to the bottom on short pages */
@@ -689,6 +810,14 @@ button.ghost { background: transparent; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 16px 12px;
+}
+/* Inside the detail pane the card is the panel's content, not a card in a
+   card — drop the double frame. */
+.pane-detail > .reg-card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .reg-head {
